@@ -28,6 +28,11 @@ export default function ScanReceiptScreen() {
     }
   }, [permission]);
 
+  useEffect(() => {
+    console.log('scan-receipt: Teams changed:', teams.length, 'teams');
+    console.log('scan-receipt: Teams loading:', teamsLoading);
+  }, [teams, teamsLoading]);
+
   if (!permission) {
     return <View style={styles.container} />;
   }
@@ -269,7 +274,11 @@ export default function ScanReceiptScreen() {
                 <Text style={styles.formLabel}>Equipo</Text>
                 <TouchableOpacity
                   style={styles.teamSelector}
-                  onPress={() => setShowTeamPicker(true)}
+                  onPress={() => {
+                    console.log('Opening team picker, teams available:', teams.length);
+                    console.log('Teams:', JSON.stringify(teams, null, 2));
+                    setShowTeamPicker(true);
+                  }}
                 >
                   <Users size={20} color="#10b981" />
                   <Text style={styles.teamSelectorText}>

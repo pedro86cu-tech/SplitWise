@@ -24,7 +24,13 @@ export function useTeams() {
   }, [user]);
 
   const loadTeams = async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('useTeams: No user found');
+      setLoading(false);
+      return;
+    }
+
+    console.log('useTeams: Loading teams for user:', user.id);
 
     try {
       const { data: teamsData, error: teamsError } = await supabase
@@ -32,9 +38,15 @@ export function useTeams() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (teamsError) throw teamsError;
+      if (teamsError) {
+        console.error('useTeams: Error loading teams:', teamsError);
+        throw teamsError;
+      }
+
+      console.log('useTeams: Teams loaded:', teamsData?.length || 0, 'teams');
 
       if (!teamsData || teamsData.length === 0) {
+        console.log('useTeams: No teams found');
         setTeams([]);
         setLoading(false);
         return;
@@ -42,10 +54,14 @@ export function useTeams() {
 
       const teamsWithCounts = await Promise.all(
         teamsData.map(async (team) => {
-          const { count } = await supabase
+          const { count, error: countError } = await supabase
             .from('team_members')
             .select('*', { count: 'exact', head: true })
             .eq('team_id', team.id);
+
+          if (countError) {
+            console.error('useTeams: Error counting members for team', team.id, ':', countError);
+          }
 
           return {
             id: team.id,
@@ -59,9 +75,11 @@ export function useTeams() {
         })
       );
 
+      console.log('useTeams: Teams with counts:', teamsWithCounts);
       setTeams(teamsWithCounts);
-    } catch (error) {
-      console.error('Error loading teams:', error);
+    } catch (error: any) {
+      console.error('useTeams: Error loading teams:', error);
+      console.error('useTeams: Error details:', error.message, error.details, error.hint);
     } finally {
       setLoading(false);
     }
