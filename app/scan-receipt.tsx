@@ -16,22 +16,86 @@ export default function ScanReceiptScreen() {
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
-  const [showTeamPicker, setShowTeamPicker] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
   const cameraRef = useRef<any>(null);
   const router = useRouter();
   const { user } = useAuth();
   const { teams, loading: teamsLoading } = useTeams();
 
   useEffect(() => {
-    if (!permission) {
+    if (!permission && showCamera) {
       requestPermission();
     }
-  }, [permission]);
+  }, [permission, showCamera]);
 
-  useEffect(() => {
-    console.log('scan-receipt: Teams changed:', teams.length, 'teams');
-    console.log('scan-receipt: Teams loading:', teamsLoading);
-  }, [teams, teamsLoading]);
+  const handleSelectTeam = (teamId: string) => {
+    setSelectedTeam(teamId);
+    setShowCamera(true);
+  };
+
+  if (!showCamera) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['#0f172a', '#1e293b']}
+          style={styles.teamSelectionContainer}
+        >
+          <View style={styles.teamSelectionHeader}>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+              <X size={28} color="#ffffff" />
+            </TouchableOpacity>
+            <Text style={styles.teamSelectionTitle}>Seleccionar Equipo</Text>
+            <View style={{ width: 28 }} />
+          </View>
+
+          <Text style={styles.teamSelectionSubtitle}>
+            Elige el equipo para este gasto
+          </Text>
+
+          <ScrollView style={styles.teamSelectionList} showsVerticalScrollIndicator={false}>
+            {teamsLoading ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateText}>Cargando equipos...</Text>
+              </View>
+            ) : teams.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Users size={64} color="#64748b" />
+                <Text style={styles.emptyStateText}>No tienes equipos</Text>
+                <Text style={styles.emptyStateSubtext}>
+                  Crea un equipo primero para poder agregar gastos
+                </Text>
+                <TouchableOpacity
+                  style={styles.createTeamButton}
+                  onPress={() => router.push('/create-team')}
+                >
+                  <Text style={styles.createTeamButtonText}>Crear Equipo</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              teams.map((team) => (
+                <TouchableOpacity
+                  key={team.id}
+                  style={styles.teamCard}
+                  onPress={() => handleSelectTeam(team.id)}
+                >
+                  <View style={styles.teamCardIcon}>
+                    <Users size={24} color="#10b981" />
+                  </View>
+                  <View style={styles.teamCardContent}>
+                    <Text style={styles.teamCardName}>{team.name}</Text>
+                    <Text style={styles.teamCardMembers}>
+                      {team.member_count} {team.member_count === 1 ? 'miembro' : 'miembros'}
+                    </Text>
+                  </View>
+                  <CameraIcon size={20} color="#94a3b8" />
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+        </LinearGradient>
+      </View>
+    );
+  }
 
   if (!permission) {
     return <View style={styles.container} />;
@@ -179,9 +243,24 @@ export default function ScanReceiptScreen() {
         <>
           <CameraView ref={cameraRef} style={styles.camera} facing="back">
             <View style={styles.cameraOverlay}>
-              <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
-                <X size={28} color="#ffffff" />
-              </TouchableOpacity>
+              <View style={styles.cameraHeader}>
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => {
+                    setShowCamera(false);
+                    setSelectedTeam(null);
+                  }}
+                >
+                  <X size={28} color="#ffffff" />
+                </TouchableOpacity>
+
+                {selectedTeamData && (
+                  <View style={styles.selectedTeamBadge}>
+                    <Users size={16} color="#10b981" />
+                    <Text style={styles.selectedTeamText}>{selectedTeamData.name}</Text>
+                  </View>
+                )}
+              </View>
 
               <View style={styles.scanFrame} />
 
@@ -270,27 +349,20 @@ export default function ScanReceiptScreen() {
                 />
               </View>
 
-              <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Equipo</Text>
-                <TouchableOpacity
-                  style={styles.teamSelector}
-                  onPress={() => {
-                    console.log('Opening team picker, teams available:', teams.length);
-                    console.log('Teams:', JSON.stringify(teams, null, 2));
-                    setShowTeamPicker(true);
-                  }}
-                >
-                  <Users size={20} color="#10b981" />
-                  <Text style={styles.teamSelectorText}>
-                    {selectedTeamData ? selectedTeamData.name : 'Seleccionar equipo'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              {selectedTeamData && (
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Equipo</Text>
+                  <View style={styles.teamDisplay}>
+                    <Users size={20} color="#10b981" />
+                    <Text style={styles.teamDisplayText}>{selectedTeamData.name}</Text>
+                  </View>
+                </View>
+              )}
 
               <TouchableOpacity
-                style={[styles.submitButton, (!selectedTeam || !amount) && styles.submitButtonDisabled]}
+                style={[styles.submitButton, !amount && styles.submitButtonDisabled]}
                 onPress={handleCreateExpense}
-                disabled={!selectedTeam || !amount}
+                disabled={!amount}
               >
                 <LinearGradient
                   colors={['#10b981', '#059669']}
@@ -305,69 +377,6 @@ export default function ScanReceiptScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-
-      <Modal visible={showTeamPicker} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.teamPickerModal]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Seleccionar Equipo</Text>
-              <TouchableOpacity onPress={() => setShowTeamPicker(false)}>
-                <X size={24} color="#94a3b8" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.teamList}>
-              {teamsLoading ? (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateText}>Cargando equipos...</Text>
-                </View>
-              ) : teams.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Users size={48} color="#64748b" />
-                  <Text style={styles.emptyStateText}>No tienes equipos</Text>
-                  <Text style={styles.emptyStateSubtext}>
-                    Crea un equipo primero para poder agregar gastos
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.createTeamButton}
-                    onPress={() => {
-                      setShowTeamPicker(false);
-                      router.push('/create-team');
-                    }}
-                  >
-                    <Text style={styles.createTeamButtonText}>Crear Equipo</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                teams.map((team) => (
-                  <TouchableOpacity
-                    key={team.id}
-                    style={[
-                      styles.teamOption,
-                      selectedTeam === team.id && styles.teamOptionSelected
-                    ]}
-                    onPress={() => {
-                      setSelectedTeam(team.id);
-                      setShowTeamPicker(false);
-                    }}
-                  >
-                    <Users size={20} color={selectedTeam === team.id ? '#10b981' : '#94a3b8'} />
-                    <View style={styles.teamOptionContent}>
-                      <Text style={styles.teamOptionName}>{team.name}</Text>
-                      <Text style={styles.teamOptionMembers}>
-                        {team.member_count} {team.member_count === 1 ? 'miembro' : 'miembros'}
-                      </Text>
-                    </View>
-                    {selectedTeam === team.id && (
-                      <Check size={20} color="#10b981" />
-                    )}
-                  </TouchableOpacity>
-                ))
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -377,6 +386,69 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
+  teamSelectionContainer: {
+    flex: 1,
+    paddingTop: 60,
+  },
+  teamSelectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    marginBottom: 8,
+  },
+  backButton: {
+    width: 28,
+    height: 28,
+  },
+  teamSelectionTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  teamSelectionSubtitle: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+    paddingHorizontal: 24,
+    marginBottom: 24,
+  },
+  teamSelectionList: {
+    flex: 1,
+    paddingHorizontal: 24,
+  },
+  teamCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    padding: 20,
+    backgroundColor: '#0f172a',
+    borderRadius: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  teamCardIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  teamCardContent: {
+    flex: 1,
+  },
+  teamCardName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 4,
+  },
+  teamCardMembers: {
+    fontSize: 14,
+    color: '#94a3b8',
+  },
   camera: {
     flex: 1,
   },
@@ -385,6 +457,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     padding: 20,
   },
+  cameraHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 40,
+  },
   closeButton: {
     width: 48,
     height: 48,
@@ -392,7 +470,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 40,
+  },
+  selectedTeamBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+  },
+  selectedTeamText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
   },
   scanFrame: {
     position: 'absolute',
@@ -535,7 +626,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#334155',
   },
-  teamSelector: {
+  teamDisplay: {
     backgroundColor: '#0f172a',
     borderRadius: 12,
     padding: 16,
@@ -543,12 +634,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#10b981',
   },
-  teamSelectorText: {
+  teamDisplayText: {
     flex: 1,
     fontSize: 16,
     color: '#ffffff',
+    fontWeight: '600',
   },
   submitButton: {
     borderRadius: 12,
@@ -569,40 +661,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#ffffff',
-  },
-  teamPickerModal: {
-    maxHeight: '60%',
-  },
-  teamList: {
-    paddingHorizontal: 24,
-  },
-  teamOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 16,
-    backgroundColor: '#0f172a',
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  teamOptionSelected: {
-    borderColor: '#10b981',
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-  },
-  teamOptionContent: {
-    flex: 1,
-  },
-  teamOptionName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  teamOptionMembers: {
-    fontSize: 12,
-    color: '#94a3b8',
   },
   emptyState: {
     flex: 1,
