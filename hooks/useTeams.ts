@@ -18,10 +18,14 @@ export function useTeams() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user) {
+    if (user?.id) {
+      console.log('useTeams: useEffect triggered for user:', user.id);
       loadTeams();
+    } else {
+      console.log('useTeams: No user ID available');
+      setLoading(false);
     }
-  }, [user]);
+  }, [user?.id]);
 
   const loadTeams = async () => {
     if (!user) {
@@ -31,6 +35,9 @@ export function useTeams() {
     }
 
     console.log('useTeams: Loading teams for user:', user.id);
+
+    const { data: { session } } = await supabase.auth.getSession();
+    console.log('useTeams: Current session:', session ? 'exists' : 'null', session?.user?.id);
 
     try {
       const { data: teamsData, error: teamsError } = await supabase
@@ -44,6 +51,9 @@ export function useTeams() {
       }
 
       console.log('useTeams: Teams loaded:', teamsData?.length || 0, 'teams');
+      if (teamsData && teamsData.length > 0) {
+        console.log('useTeams: First team:', teamsData[0]);
+      }
 
       if (!teamsData || teamsData.length === 0) {
         console.log('useTeams: No teams found');
