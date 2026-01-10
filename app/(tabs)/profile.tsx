@@ -1,14 +1,52 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { User as UserIcon, Users, LogOut, Mail } from 'lucide-react-native';
+import { User as UserIcon, Users, LogOut, Mail, Fingerprint } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/hooks/useTeams';
 import { useRouter } from 'expo-router';
+import { useState, useEffect } from 'react';
+import * as SecureStore from 'expo-secure-store';
+import * as LocalAuthentication from 'expo-local-authentication';
+
+const BIOMETRIC_ENABLED_KEY = 'biometric_enabled';
 
 export default function ProfileScreen() {
   const { user, profile, signOut } = useAuth();
   const { teams, loading } = useTeams();
   const router = useRouter();
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
+
+  useEffect(() => {
+    checkBiometricAvailability();
+  }, []);
+
+  const checkBiometricAvailability = async () => {
+    const compatible = await LocalAuthentication.hasHardwareAsync();
+    const enrolled = await LocalAuthentication.isEnrolledAsync();
+    setIsBiometricAvailable(compatible && enrolled);
+
+    if (compatible && enrolled) {
+      const enabled = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
+      setBiometricEnabled(enabled === 'true');
+    }
+  };
+
+  const handleToggleBiometric = async (value: boolean) => {
+    try {
+      await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, value.toString());
+      setBiometricEnabled(value);
+
+      Alert.alert(
+        value ? 'Face ID Habilitado' : 'Face ID Deshabilitado',
+        value
+          ? 'La autenticación biométrica se activará en el próximo inicio de sesión'
+          : 'Deberás iniciar sesión manualmente la próxima vez'
+      );
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo actualizar la configuración');
+    }
+  };
 
   const handleSignOut = () => {
     Alert.alert(
@@ -108,6 +146,34 @@ export default function ProfileScreen() {
             </View>
           </View>
         </View>
+
+        {isBiometricAvailable && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Seguridad</Text>
+
+            <View style={styles.settingCard}>
+              <View style={styles.settingRow}>
+                <View style={styles.settingIcon}>
+                  <Fingerprint size={20} color="#10b981" />
+                </View>
+                <View style={styles.settingContent}>
+                  <Text style={styles.settingLabel}>Face ID / Touch ID</Text>
+                  <Text style={styles.settingDescription}>
+                    {biometricEnabled
+                      ? 'Activo - Inicia sesión automáticamente'
+                      : 'Inactivo - Requiere contraseña manual'}
+                  </Text>
+                </View>
+                <Switch
+                  value={biometricEnabled}
+                  onValueChange={handleToggleBiometric}
+                  trackColor={{ false: '#334155', true: '#10b981' }}
+                  thumbColor="#ffffff"
+                />
+              </View>
+            </View>
+          </View>
+        )}
 
         <View style={styles.section}>
           <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
@@ -274,6 +340,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#ffffff',
     fontWeight: '500',
+  },
+  settingCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  settingIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingContent: {
+    flex: 1,
+    gap: 4,
+  },
+  settingLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  settingDescription: {
+    fontSize: 12,
+    color: '#94a3b8',
   },
   signOutButton: {
     backgroundColor: '#1e293b',
