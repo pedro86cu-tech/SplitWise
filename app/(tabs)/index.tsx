@@ -70,7 +70,14 @@ export default function HomeScreen() {
             </View>
           ) : (
             debts.map((debt) => (
-              <View key={debt.teamId} style={styles.debtCard}>
+              <TouchableOpacity
+                key={debt.teamId}
+                style={styles.debtCard}
+                onPress={() => router.push({
+                  pathname: '/team-debt-details',
+                  params: { teamId: debt.teamId, teamName: debt.teamName },
+                })}
+              >
                 <View style={styles.debtHeader}>
                   <Text style={styles.teamName}>{debt.teamName}</Text>
                   {debt.netBalance > 0 ? (
@@ -103,7 +110,9 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                 </View>
-              </View>
+
+                <Text style={styles.tapHint}>Toca para ver detalles</Text>
+              </TouchableOpacity>
             ))
           )}
         </View>
@@ -308,6 +317,13 @@ const styles = StyleSheet.create({
   netAmount: {
     fontSize: 18,
     fontWeight: '700',
+  },
+  tapHint: {
+    fontSize: 12,
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 12,
+    fontStyle: 'italic',
   },
   fab: {
     position: 'absolute',
