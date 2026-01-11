@@ -165,18 +165,22 @@ export default function TeamDebtDetailsScreen() {
   };
 
   const groupByUser = (debts: typeof details.owedToMe) => {
-    const grouped = new Map<string, { userName: string; debts: typeof details.owedToMe; total: number }>();
+    const grouped = new Map<string, { userName: string; debts: typeof details.owedToMe; total: number; unpaidTotal: number }>();
 
     debts.forEach((debt) => {
       const existing = grouped.get(debt.userId);
       if (existing) {
         existing.debts.push(debt);
         existing.total += debt.amount;
+        if (!debt.isSettled) {
+          existing.unpaidTotal += debt.amount;
+        }
       } else {
         grouped.set(debt.userId, {
           userName: debt.userName,
           debts: [debt],
           total: debt.amount,
+          unpaidTotal: debt.isSettled ? 0 : debt.amount,
         });
       }
     });
@@ -227,20 +231,40 @@ export default function TeamDebtDetailsScreen() {
                     </View>
                     <View>
                       <Text style={styles.userName}>{group.userName}</Text>
-                      <Text style={styles.userTotal}>Total: ${group.total.toFixed(2)}</Text>
+                      <Text style={styles.userTotal}>
+                        Pendiente: ${group.unpaidTotal.toFixed(2)}
+                      </Text>
+                      {group.total !== group.unpaidTotal && (
+                        <Text style={styles.userTotalPaid}>
+                          Pagado: ${(group.total - group.unpaidTotal).toFixed(2)}
+                        </Text>
+                      )}
                     </View>
                   </View>
                 </View>
 
                 <View style={styles.debtsList}>
                   {group.debts.map((debt) => (
-                    <View key={debt.splitId} style={styles.debtItem}>
+                    <View key={debt.splitId} style={[styles.debtItem, debt.isSettled && styles.debtItemSettled]}>
                       <View style={styles.debtInfo}>
-                        <View style={styles.receiptIcon}>
-                          <Receipt size={16} color="#94a3b8" />
+                        <View style={[styles.receiptIcon, debt.isSettled && styles.receiptIconSettled]}>
+                          {debt.isSettled ? (
+                            <CheckCircle size={16} color="#10b981" />
+                          ) : (
+                            <Receipt size={16} color="#94a3b8" />
+                          )}
                         </View>
                         <View style={styles.debtDetails}>
-                          <Text style={styles.debtDescription}>{debt.expenseDescription}</Text>
+                          <View style={styles.debtTitleRow}>
+                            <Text style={[styles.debtDescription, debt.isSettled && styles.debtDescriptionSettled]}>
+                              {debt.expenseDescription}
+                            </Text>
+                            {debt.isSettled && (
+                              <View style={styles.paidBadge}>
+                                <Text style={styles.paidBadgeText}>PAGADO</Text>
+                              </View>
+                            )}
+                          </View>
                           <Text style={styles.debtDate}>{formatDate(debt.expenseDate)}</Text>
                           {debt.paymentProofUrl && (
                             <TouchableOpacity
@@ -256,13 +280,17 @@ export default function TeamDebtDetailsScreen() {
                         </View>
                       </View>
                       <View style={styles.debtActions}>
-                        <Text style={styles.debtAmount}>${debt.amount.toFixed(2)}</Text>
-                        <TouchableOpacity
-                          style={styles.markButton}
-                          onPress={() => handleMarkAsSettled(debt.splitId, group.userName, debt.amount)}
-                        >
-                          <CheckCircle size={20} color="#10b981" />
-                        </TouchableOpacity>
+                        <Text style={[styles.debtAmount, debt.isSettled && styles.debtAmountSettled]}>
+                          ${debt.amount.toFixed(2)}
+                        </Text>
+                        {!debt.isSettled && (
+                          <TouchableOpacity
+                            style={styles.markButton}
+                            onPress={() => handleMarkAsSettled(debt.splitId, group.userName, debt.amount)}
+                          >
+                            <CheckCircle size={20} color="#10b981" />
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </View>
                   ))}
@@ -279,13 +307,26 @@ export default function TeamDebtDetailsScreen() {
               <View key={group.debts[0]?.expenseId} style={styles.userCard}>
                 <View style={styles.debtsList}>
                   {group.debts.map((debt) => (
-                    <View key={debt.splitId} style={styles.debtItem}>
+                    <View key={debt.splitId} style={[styles.debtItem, debt.isSettled && styles.debtItemSettled]}>
                       <View style={styles.debtInfo}>
-                        <View style={styles.receiptIcon}>
-                          <Receipt size={16} color="#94a3b8" />
+                        <View style={[styles.receiptIcon, debt.isSettled && styles.receiptIconSettled]}>
+                          {debt.isSettled ? (
+                            <CheckCircle size={16} color="#10b981" />
+                          ) : (
+                            <Receipt size={16} color="#94a3b8" />
+                          )}
                         </View>
                         <View style={styles.debtDetails}>
-                          <Text style={styles.debtDescription}>{debt.expenseDescription}</Text>
+                          <View style={styles.debtTitleRow}>
+                            <Text style={[styles.debtDescription, debt.isSettled && styles.debtDescriptionSettled]}>
+                              {debt.expenseDescription}
+                            </Text>
+                            {debt.isSettled && (
+                              <View style={styles.paidBadge}>
+                                <Text style={styles.paidBadgeText}>PAGADO</Text>
+                              </View>
+                            )}
+                          </View>
                           <Text style={styles.debtDate}>{formatDate(debt.expenseDate)}</Text>
                           {debt.paymentProofUrl && (
                             <View style={styles.proofBadge}>
@@ -296,49 +337,58 @@ export default function TeamDebtDetailsScreen() {
                         </View>
                       </View>
                       <View style={styles.debtActions}>
-                        <Text style={[styles.debtAmount, styles.negativeAmount]}>
+                        <Text style={[styles.debtAmount, styles.negativeAmount, debt.isSettled && styles.debtAmountSettled]}>
                           -${debt.amount.toFixed(2)}
                         </Text>
-                        <View style={styles.actionButtons}>
-                          <TouchableOpacity
-                            style={styles.uploadButton}
-                            onPress={() => handleUploadProof(debt.splitId, debt.amount, debt.expenseDescription)}
-                          >
-                            <Upload size={20} color="#3b82f6" />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.payButton}
-                            onPress={() => {
-                              Alert.alert(
-                                'Confirmar pago',
-                                `¿Ya pagaste $${debt.amount.toFixed(2)}?`,
-                                [
-                                  { text: 'Cancelar', style: 'cancel' },
-                                  {
-                                    text: 'Sí, pagué',
-                                    onPress: async () => {
-                                      const success = await markAsSettled(debt.splitId);
-                                      if (success) {
-                                        Alert.alert('Confirmado', 'El pago ha sido marcado como realizado');
-                                      } else {
-                                        Alert.alert('Error', 'No se pudo confirmar el pago');
-                                      }
+                        {!debt.isSettled && (
+                          <View style={styles.actionButtons}>
+                            <TouchableOpacity
+                              style={styles.uploadButton}
+                              onPress={() => handleUploadProof(debt.splitId, debt.amount, debt.expenseDescription)}
+                            >
+                              <Upload size={20} color="#3b82f6" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.payButton}
+                              onPress={() => {
+                                Alert.alert(
+                                  'Confirmar pago',
+                                  `¿Ya pagaste $${debt.amount.toFixed(2)}?`,
+                                  [
+                                    { text: 'Cancelar', style: 'cancel' },
+                                    {
+                                      text: 'Sí, pagué',
+                                      onPress: async () => {
+                                        const success = await markAsSettled(debt.splitId);
+                                        if (success) {
+                                          Alert.alert('Confirmado', 'El pago ha sido marcado como realizado');
+                                        } else {
+                                          Alert.alert('Error', 'No se pudo confirmar el pago');
+                                        }
+                                      },
                                     },
-                                  },
-                                ]
-                              );
-                            }}
-                          >
-                            <CheckCircle size={20} color="#10b981" />
-                          </TouchableOpacity>
-                        </View>
+                                  ]
+                                );
+                              }}
+                            >
+                              <CheckCircle size={20} color="#10b981" />
+                            </TouchableOpacity>
+                          </View>
+                        )}
                       </View>
                     </View>
                   ))}
                   <View style={styles.totalRow}>
-                    <Text style={styles.totalLabel}>Total que debes:</Text>
+                    <View>
+                      <Text style={styles.totalLabel}>Pendiente:</Text>
+                      {group.total !== group.unpaidTotal && (
+                        <Text style={styles.totalLabelPaid}>
+                          Pagado: ${(group.total - group.unpaidTotal).toFixed(2)}
+                        </Text>
+                      )}
+                    </View>
                     <Text style={[styles.totalAmount, styles.negativeAmount]}>
-                      ${group.total.toFixed(2)}
+                      ${group.unpaidTotal.toFixed(2)}
                     </Text>
                   </View>
                 </View>
@@ -595,6 +645,12 @@ const styles = StyleSheet.create({
     color: '#10b981',
     marginTop: 2,
   },
+  userTotalPaid: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748b',
+    marginTop: 4,
+  },
   debtsList: {
     gap: 12,
   },
@@ -605,6 +661,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
     padding: 12,
     borderRadius: 12,
+  },
+  debtItemSettled: {
+    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
   debtInfo: {
     flex: 1,
@@ -620,14 +681,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  receiptIconSettled: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+  },
   debtDetails: {
     flex: 1,
     gap: 4,
+  },
+  debtTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
   },
   debtDescription: {
     fontSize: 14,
     fontWeight: '500',
     color: '#ffffff',
+  },
+  debtDescriptionSettled: {
+    color: '#94a3b8',
   },
   debtDate: {
     fontSize: 12,
@@ -647,8 +720,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#10b981',
   },
+  debtAmountSettled: {
+    color: '#64748b',
+  },
   negativeAmount: {
     color: '#ef4444',
+  },
+  paidBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  paidBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#10b981',
+    letterSpacing: 0.5,
   },
   markButton: {
     width: 36,
@@ -698,6 +788,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#e2e8f0',
+  },
+  totalLabelPaid: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#64748b',
+    marginTop: 4,
   },
   totalAmount: {
     fontSize: 18,

@@ -46,6 +46,7 @@ export function useTeamDebtDetails(teamId: string) {
           user_id,
           expense_id,
           payment_proof_url,
+          settled_at,
           expenses!inner(
             id,
             description,
@@ -58,7 +59,6 @@ export function useTeamDebtDetails(teamId: string) {
             full_name
           )
         `)
-        .eq('is_settled', false)
         .eq('expenses.paid_by', user.id)
         .eq('expenses.team_id', teamId)
         .neq('user_id', user.id);
@@ -72,6 +72,7 @@ export function useTeamDebtDetails(teamId: string) {
           user_id,
           expense_id,
           payment_proof_url,
+          settled_at,
           expenses!inner(
             id,
             description,
@@ -85,7 +86,6 @@ export function useTeamDebtDetails(teamId: string) {
           )
         `)
         .eq('user_id', user.id)
-        .eq('is_settled', false)
         .eq('expenses.team_id', teamId);
 
       const owedToMe: DebtDetail[] = owedToMeData?.map((split: any) => ({
