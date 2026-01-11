@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Receipt, User, CheckCircle, XCircle, FileText, Calendar, DollarSign, Tag, X } from 'lucide-react-native';
+import { ArrowLeft, Receipt, User, CircleCheck as CheckCircle, Circle as XCircle, FileText, Calendar, DollarSign, Tag, X } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useExpensePaymentDetails } from '@/hooks/useExpensePaymentDetails';
 import { useState } from 'react';
