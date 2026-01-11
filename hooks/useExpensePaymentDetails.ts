@@ -42,7 +42,7 @@ export function useExpensePaymentDetails(expenseId: string) {
         .select(`
           id,
           description,
-          amount,
+          total_amount,
           created_at,
           paid_by,
           category,
@@ -99,7 +99,7 @@ export function useExpensePaymentDetails(expenseId: string) {
       setDetails({
         id: expenseData.id,
         description: expenseData.description,
-        totalAmount: Number(expenseData.amount),
+        totalAmount: Number(expenseData.total_amount),
         createdAt: expenseData.created_at,
         paidByUserId: expenseData.paid_by,
         paidByName: paidByProfile?.full_name || 'Usuario',
