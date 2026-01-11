@@ -69,8 +69,7 @@ export function useExpensePaymentDetails(expenseId: string) {
           settled_by,
           profiles!expense_splits_user_id_fkey(
             id,
-            full_name,
-            email
+            full_name
           )
         `)
         .eq('expense_id', expenseId);
