@@ -18,6 +18,9 @@ export default function TeamDebtDetailsScreen() {
   const [selectedSplit, setSelectedSplit] = useState<{ id: string; amount: number; description: string } | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [showViewProofModal, setShowViewProofModal] = useState(false);
+  const [viewingProofUrl, setViewingProofUrl] = useState<string | null>(null);
+  const [viewingProofSplit, setViewingProofSplit] = useState<{ id: string; amount: number; userName: string } | null>(null);
 
   const handleMarkAsSettled = (splitId: string, userName: string, amount: number) => {
     Alert.alert(
@@ -43,6 +46,26 @@ export default function TeamDebtDetailsScreen() {
   const handleUploadProof = (splitId: string, amount: number, description: string) => {
     setSelectedSplit({ id: splitId, amount, description });
     setShowProofModal(true);
+  };
+
+  const handleViewProof = (proofUrl: string, splitId: string, amount: number, userName: string) => {
+    setViewingProofUrl(proofUrl);
+    setViewingProofSplit({ id: splitId, amount, userName });
+    setShowViewProofModal(true);
+  };
+
+  const handleConfirmPaymentFromProof = async () => {
+    if (!viewingProofSplit) return;
+
+    const success = await markAsSettled(viewingProofSplit.id);
+    if (success) {
+      Alert.alert('Pago confirmado', 'La deuda ha sido marcada como pagada');
+      setShowViewProofModal(false);
+      setViewingProofUrl(null);
+      setViewingProofSplit(null);
+    } else {
+      Alert.alert('Error', 'No se pudo confirmar el pago');
+    }
   };
 
   const pickImageFromGallery = async () => {
@@ -219,6 +242,17 @@ export default function TeamDebtDetailsScreen() {
                         <View style={styles.debtDetails}>
                           <Text style={styles.debtDescription}>{debt.expenseDescription}</Text>
                           <Text style={styles.debtDate}>{formatDate(debt.expenseDate)}</Text>
+                          {debt.paymentProofUrl && (
+                            <TouchableOpacity
+                              style={styles.proofBadge}
+                              onPress={() => handleViewProof(debt.paymentProofUrl!, debt.splitId, debt.amount, group.userName)}
+                            >
+                              <FileText size={12} color="#3b82f6" />
+                              <Text style={[styles.proofText, { color: '#3b82f6' }]}>
+                                Ver comprobante
+                              </Text>
+                            </TouchableOpacity>
+                          )}
                         </View>
                       </View>
                       <View style={styles.debtActions}>
@@ -377,6 +411,69 @@ export default function TeamDebtDetailsScreen() {
                   ) : (
                     <Text style={styles.submitButtonText}>Enviar</Text>
                   )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        visible={showViewProofModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowViewProofModal(false);
+          setViewingProofUrl(null);
+          setViewingProofSplit(null);
+        }}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => {
+            setShowViewProofModal(false);
+            setViewingProofUrl(null);
+            setViewingProofSplit(null);
+          }}
+        >
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalTitle}>Comprobante de pago</Text>
+            <Text style={styles.modalSubtitle}>
+              {viewingProofSplit?.userName} - ${viewingProofSplit?.amount.toFixed(2)}
+            </Text>
+            <Text style={styles.modalDescription}>
+              Revisa el comprobante y confirma si recibiste el pago
+            </Text>
+
+            {viewingProofUrl && (
+              <View style={styles.imagePreviewContainer}>
+                <Image
+                  source={{ uri: viewingProofUrl }}
+                  style={styles.imagePreview}
+                  resizeMode="contain"
+                />
+              </View>
+            )}
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowViewProofModal(false);
+                  setViewingProofUrl(null);
+                  setViewingProofSplit(null);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cerrar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.submitButton]}
+                onPress={handleConfirmPaymentFromProof}
+              >
+                <LinearGradient colors={['#10b981', '#059669']} style={styles.submitButtonGradient}>
+                  <CheckCircle size={20} color="#ffffff" strokeWidth={2.5} />
+                  <Text style={styles.confirmButtonText}>Confirmar pago</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
@@ -690,10 +787,17 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
   },
   submitButtonText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#ffffff',
+  },
+  confirmButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginLeft: 8,
   },
 });
