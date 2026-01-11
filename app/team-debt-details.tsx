@@ -141,7 +141,7 @@ export default function TeamDebtDetailsScreen() {
       const success = await uploadPaymentProof(selectedSplit.id, urlData.publicUrl);
 
       if (success) {
-        Alert.alert('Éxito', 'Comprobante de pago enviado correctamente');
+        Alert.alert('¡Pago confirmado!', 'Tu comprobante fue enviado y el pago quedó registrado');
         setShowProofModal(false);
         setSelectedImage(null);
         setSelectedSplit(null);
@@ -299,14 +299,39 @@ export default function TeamDebtDetailsScreen() {
                         <Text style={[styles.debtAmount, styles.negativeAmount]}>
                           -${debt.amount.toFixed(2)}
                         </Text>
-                        {!debt.paymentProofUrl && (
+                        <View style={styles.actionButtons}>
                           <TouchableOpacity
                             style={styles.uploadButton}
                             onPress={() => handleUploadProof(debt.splitId, debt.amount, debt.expenseDescription)}
                           >
                             <Upload size={20} color="#3b82f6" />
                           </TouchableOpacity>
-                        )}
+                          <TouchableOpacity
+                            style={styles.payButton}
+                            onPress={() => {
+                              Alert.alert(
+                                'Confirmar pago',
+                                `¿Ya pagaste $${debt.amount.toFixed(2)}?`,
+                                [
+                                  { text: 'Cancelar', style: 'cancel' },
+                                  {
+                                    text: 'Sí, pagué',
+                                    onPress: async () => {
+                                      const success = await markAsSettled(debt.splitId);
+                                      if (success) {
+                                        Alert.alert('Confirmado', 'El pago ha sido marcado como realizado');
+                                      } else {
+                                        Alert.alert('Error', 'No se pudo confirmar el pago');
+                                      }
+                                    },
+                                  },
+                                ]
+                              );
+                            }}
+                          >
+                            <CheckCircle size={20} color="#10b981" />
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     </View>
                   ))}
@@ -613,6 +638,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   debtAmount: {
     fontSize: 16,
     fontWeight: '700',
@@ -634,6 +663,14 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  payButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
   },

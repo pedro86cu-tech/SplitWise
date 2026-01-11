@@ -145,7 +145,12 @@ export function useTeamDebtDetails(teamId: string) {
     try {
       const { error } = await supabase
         .from('expense_splits')
-        .update({ payment_proof_url: proofUrl })
+        .update({
+          payment_proof_url: proofUrl,
+          is_settled: true,
+          settled_by: user?.id,
+          settled_at: new Date().toISOString(),
+        })
         .eq('id', splitId);
 
       if (error) throw error;
