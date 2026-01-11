@@ -110,6 +110,72 @@ export function useTeamDetails(teamId: string) {
     }
   };
 
+  const recalculateExpenseSplits = async (newMemberId: string) => {
+    try {
+      const { data: expenses } = await supabase
+        .from('expenses')
+        .select('id, total_amount, paid_by')
+        .eq('team_id', teamId);
+
+      if (!expenses || expenses.length === 0) {
+        return true;
+      }
+
+      const { data: allMembers } = await supabase
+        .from('team_members')
+        .select('user_id')
+        .eq('team_id', teamId);
+
+      if (!allMembers || allMembers.length === 0) {
+        return true;
+      }
+
+      const memberCount = allMembers.length;
+
+      for (const expense of expenses) {
+        const newSplitAmount = expense.total_amount / memberCount;
+
+        const { data: existingSplits } = await supabase
+          .from('expense_splits')
+          .select('id, user_id')
+          .eq('expense_id', expense.id);
+
+        for (const split of existingSplits || []) {
+          await supabase
+            .from('expense_splits')
+            .update({
+              amount: newSplitAmount,
+              is_settled: split.user_id === expense.paid_by
+            })
+            .eq('id', split.id);
+        }
+
+        const { data: existingSplit } = await supabase
+          .from('expense_splits')
+          .select('id')
+          .eq('expense_id', expense.id)
+          .eq('user_id', newMemberId)
+          .maybeSingle();
+
+        if (!existingSplit) {
+          await supabase
+            .from('expense_splits')
+            .insert({
+              expense_id: expense.id,
+              user_id: newMemberId,
+              amount: newSplitAmount,
+              is_settled: newMemberId === expense.paid_by,
+            });
+        }
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error recalculating expense splits:', error);
+      return false;
+    }
+  };
+
   const addMember = async (email: string) => {
     try {
       const trimmedEmail = email.trim().toLowerCase();
@@ -140,6 +206,15 @@ export function useTeamDetails(teamId: string) {
           return { success: false, error: 'El usuario ya es miembro del equipo' };
         }
         throw memberError;
+      }
+
+      const recalculated = await recalculateExpenseSplits(userData.id);
+
+      if (!recalculated) {
+        return {
+          success: true,
+          warning: 'Miembro agregado pero hubo un problema al recalcular los gastos'
+        };
       }
 
       await loadTeamDetails();

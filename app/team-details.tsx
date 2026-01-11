@@ -48,7 +48,11 @@ export default function TeamDetailsScreen() {
     setAddingMember(false);
 
     if (result.success) {
-      Alert.alert('Éxito', 'Miembro agregado al equipo correctamente');
+      const message = result.warning
+        ? 'Miembro agregado. ' + result.warning
+        : 'Miembro agregado al equipo correctamente. Los gastos existentes se han recalculado para incluir al nuevo miembro.';
+
+      Alert.alert('Éxito', message);
       setShowAddMember(false);
       setNewMemberEmail('');
     } else {
