@@ -21,6 +21,7 @@ export default function ScanReceiptScreen() {
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [manualEntry, setManualEntry] = useState(false);
+  const [teamSelected, setTeamSelected] = useState(false);
   const cameraRef = useRef<any>(null);
   const router = useRouter();
   const { user } = useAuth();
@@ -46,6 +47,7 @@ export default function ScanReceiptScreen() {
   const handleSelectTeam = (teamId: string, manual: boolean = false) => {
     setSelectedTeam(teamId);
     setManualEntry(manual);
+    setTeamSelected(true);
     if (manual) {
       setShowExpenseForm(true);
     } else {
@@ -53,7 +55,7 @@ export default function ScanReceiptScreen() {
     }
   };
 
-  if (!showCamera) {
+  if (!teamSelected) {
     return (
       <View style={styles.container}>
         <LinearGradient
@@ -130,26 +132,28 @@ export default function ScanReceiptScreen() {
     );
   }
 
-  if (!permission) {
-    return <View style={styles.container} />;
-  }
+  if (!manualEntry) {
+    if (!permission) {
+      return <View style={styles.container} />;
+    }
 
-  if (!permission.granted) {
-    return (
-      <View style={styles.container}>
-        <LinearGradient
-          colors={['#0f172a', '#1e293b']}
-          style={styles.permissionContainer}
-        >
-          <CameraIcon size={64} color="#64748b" />
-          <Text style={styles.permissionText}>Necesitamos acceso a tu cámara</Text>
-          <Text style={styles.permissionSubtext}>Para escanear recibos y extraer el monto</Text>
-          <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-            <Text style={styles.permissionButtonText}>Otorgar permiso</Text>
-          </TouchableOpacity>
-        </LinearGradient>
-      </View>
-    );
+    if (!permission.granted) {
+      return (
+        <View style={styles.container}>
+          <LinearGradient
+            colors={['#0f172a', '#1e293b']}
+            style={styles.permissionContainer}
+          >
+            <CameraIcon size={64} color="#64748b" />
+            <Text style={styles.permissionText}>Necesitamos acceso a tu cámara</Text>
+            <Text style={styles.permissionSubtext}>Para escanear recibos y extraer el monto</Text>
+            <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
+              <Text style={styles.permissionButtonText}>Otorgar permiso</Text>
+            </TouchableOpacity>
+          </LinearGradient>
+        </View>
+      );
+    }
   }
 
   const takePicture = async () => {
@@ -276,7 +280,12 @@ export default function ScanReceiptScreen() {
 
   return (
     <View style={styles.container}>
-      {!capturedImage ? (
+      {manualEntry ? (
+        <LinearGradient
+          colors={['#0f172a', '#1e293b']}
+          style={{ flex: 1 }}
+        />
+      ) : !capturedImage ? (
         <>
           <CameraView ref={cameraRef} style={styles.camera} facing="back">
             <View style={styles.cameraOverlay}>
@@ -286,6 +295,7 @@ export default function ScanReceiptScreen() {
                   onPress={() => {
                     setShowCamera(false);
                     setSelectedTeam(null);
+                    setTeamSelected(false);
                   }}
                 >
                   <X size={28} color="#ffffff" />
