@@ -30,12 +30,12 @@ Deno.serve(async (req: Request) => {
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
 
     if (!openaiApiKey) {
-      console.error('OPENAI_API_KEY not configured');
+      console.error('OPENAI_API_KEY not configured in Supabase environment');
       return new Response(
         JSON.stringify({
-          amount: null,
+          amount: 0,
           description: 'Gasto escaneado',
-          error: 'AI processing not available. Please enter amount manually.',
+          error: 'OPENAI_API_KEY no configurada. Ve a Supabase Dashboard > Project Settings > Edge Functions > Add Secret',
         }),
         {
           status: 200,
@@ -43,6 +43,8 @@ Deno.serve(async (req: Request) => {
         }
       );
     }
+
+    console.log('Calling OpenAI API...');
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -55,14 +57,14 @@ Deno.serve(async (req: Request) => {
         messages: [
           {
             role: 'system',
-            content: 'You are a receipt analyzer. Extract the total amount and a brief description from receipts. Return only valid JSON with fields: amount (number) and description (string). If you cannot find the total, return null for amount.',
+            content: 'You are a receipt analyzer. Extract the total amount and a brief description from receipts. Return ONLY valid JSON with fields: amount (number) and description (string). If you cannot find the total, return 0 for amount. Example: {"amount": 25.50, "description": "Restaurant bill"}',
           },
           {
             role: 'user',
             content: [
               {
                 type: 'text',
-                text: 'Extract the total amount and description from this receipt. Return JSON format: {"amount": number, "description": string}',
+                text: 'Extract the total amount and description from this receipt. Return ONLY JSON format: {"amount": number, "description": string}. Do not include any other text.',
               },
               {
                 type: 'image_url',
@@ -74,25 +76,37 @@ Deno.serve(async (req: Request) => {
           },
         ],
         max_tokens: 300,
+        temperature: 0.1,
       }),
     });
 
     if (!response.ok) {
-      throw new Error('OpenAI API request failed');
+      const errorText = await response.text();
+      console.error('OpenAI API error:', errorText);
+      throw new Error(`OpenAI API request failed: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
+    console.log('OpenAI response:', JSON.stringify(data));
+
     const content = data.choices[0]?.message?.content;
 
     if (!content) {
       throw new Error('No content in OpenAI response');
     }
 
-    const result = JSON.parse(content);
+    let result;
+    try {
+      const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      result = JSON.parse(cleanContent);
+    } catch (parseError) {
+      console.error('Failed to parse OpenAI response:', content);
+      throw new Error(`Failed to parse OpenAI response: ${parseError.message}`);
+    }
 
     return new Response(
       JSON.stringify({
-        amount: result.amount,
+        amount: result.amount || 0,
         description: result.description || 'Gasto escaneado',
       }),
       {
@@ -105,11 +119,11 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({
         amount: 0,
-        description: 'Error al procesar recibo',
-        error: error.message,
+        description: 'Gasto escaneado',
+        error: error.message || 'Error desconocido al procesar el recibo',
       }),
       {
-        status: 500,
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     );
