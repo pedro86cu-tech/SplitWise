@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
-import { X, Camera as CameraIcon, Check, Users } from 'lucide-react-native';
+import { X, Camera as CameraIcon, Check, Users, Edit3, MapPin, Calendar, Tag } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/hooks/useTeams';
@@ -15,12 +15,27 @@ export default function ScanReceiptScreen() {
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
+  const [category, setCategory] = useState('general');
+  const [location, setLocation] = useState('');
+  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
+  const [manualEntry, setManualEntry] = useState(false);
   const cameraRef = useRef<any>(null);
   const router = useRouter();
   const { user } = useAuth();
   const { teams, loading: teamsLoading } = useTeams();
+
+  const CATEGORIES = [
+    { value: 'general', label: 'General' },
+    { value: 'food', label: 'Comida' },
+    { value: 'transport', label: 'Transporte' },
+    { value: 'entertainment', label: 'Entretenimiento' },
+    { value: 'shopping', label: 'Compras' },
+    { value: 'utilities', label: 'Servicios' },
+    { value: 'health', label: 'Salud' },
+    { value: 'other', label: 'Otro' },
+  ];
 
   useEffect(() => {
     if (!permission && showCamera) {
@@ -28,9 +43,14 @@ export default function ScanReceiptScreen() {
     }
   }, [permission, showCamera]);
 
-  const handleSelectTeam = (teamId: string) => {
+  const handleSelectTeam = (teamId: string, manual: boolean = false) => {
     setSelectedTeam(teamId);
-    setShowCamera(true);
+    setManualEntry(manual);
+    if (manual) {
+      setShowExpenseForm(true);
+    } else {
+      setShowCamera(true);
+    }
   };
 
   if (!showCamera) {
@@ -73,22 +93,35 @@ export default function ScanReceiptScreen() {
               </View>
             ) : (
               teams.map((team) => (
-                <TouchableOpacity
-                  key={team.id}
-                  style={styles.teamCard}
-                  onPress={() => handleSelectTeam(team.id)}
-                >
-                  <View style={styles.teamCardIcon}>
-                    <Users size={24} color="#10b981" />
+                <View key={team.id} style={styles.teamCardWrapper}>
+                  <View style={styles.teamCardHeader}>
+                    <View style={styles.teamCardIcon}>
+                      <Users size={24} color="#10b981" />
+                    </View>
+                    <View style={styles.teamCardContent}>
+                      <Text style={styles.teamCardName}>{team.name}</Text>
+                      <Text style={styles.teamCardMembers}>
+                        {team.member_count} {team.member_count === 1 ? 'miembro' : 'miembros'}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.teamCardContent}>
-                    <Text style={styles.teamCardName}>{team.name}</Text>
-                    <Text style={styles.teamCardMembers}>
-                      {team.member_count} {team.member_count === 1 ? 'miembro' : 'miembros'}
-                    </Text>
+                  <View style={styles.teamCardActions}>
+                    <TouchableOpacity
+                      style={[styles.teamActionButton, styles.scanButton]}
+                      onPress={() => handleSelectTeam(team.id, false)}
+                    >
+                      <CameraIcon size={18} color="#ffffff" />
+                      <Text style={styles.teamActionButtonText}>Escanear</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.teamActionButton, styles.manualButton]}
+                      onPress={() => handleSelectTeam(team.id, true)}
+                    >
+                      <Edit3 size={18} color="#ffffff" />
+                      <Text style={styles.teamActionButtonText}>Manual</Text>
+                    </TouchableOpacity>
                   </View>
-                  <CameraIcon size={20} color="#94a3b8" />
-                </TouchableOpacity>
+                </View>
               ))
             )}
           </ScrollView>
@@ -189,7 +222,7 @@ export default function ScanReceiptScreen() {
 
   const handleCreateExpense = async () => {
     if (!selectedTeam || !amount || !description || !user) {
-      Alert.alert('Error', 'Por favor completa todos los campos');
+      Alert.alert('Error', 'Por favor completa todos los campos obligatorios');
       return;
     }
 
@@ -201,6 +234,10 @@ export default function ScanReceiptScreen() {
           description,
           total_amount: parseFloat(amount),
           paid_by: user.id,
+          receipt_image_url: capturedImage,
+          category,
+          location: location || null,
+          expense_date: expenseDate,
         })
         .select()
         .single();
@@ -327,7 +364,7 @@ export default function ScanReceiptScreen() {
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Descripción</Text>
+                <Text style={styles.formLabel}>Descripción *</Text>
                 <TextInput
                   style={styles.formInput}
                   value={description}
@@ -338,15 +375,69 @@ export default function ScanReceiptScreen() {
               </View>
 
               <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Monto</Text>
-                <TextInput
-                  style={styles.formInput}
-                  value={amount}
-                  onChangeText={setAmount}
-                  placeholder="0.00"
-                  placeholderTextColor="#64748b"
-                  keyboardType="decimal-pad"
-                />
+                <Text style={styles.formLabel}>Monto *</Text>
+                <View style={styles.amountInputWrapper}>
+                  <Text style={styles.currencySymbol}>$</Text>
+                  <TextInput
+                    style={[styles.formInput, styles.amountInput]}
+                    value={amount}
+                    onChangeText={setAmount}
+                    placeholder="0.00"
+                    placeholderTextColor="#64748b"
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Categoría</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+                  {CATEGORIES.map((cat) => (
+                    <TouchableOpacity
+                      key={cat.value}
+                      style={[
+                        styles.categoryChip,
+                        category === cat.value && styles.categoryChipActive
+                      ]}
+                      onPress={() => setCategory(cat.value)}
+                    >
+                      <Text style={[
+                        styles.categoryChipText,
+                        category === cat.value && styles.categoryChipTextActive
+                      ]}>
+                        {cat.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Fecha</Text>
+                <View style={styles.inputWithIcon}>
+                  <Calendar size={18} color="#94a3b8" />
+                  <TextInput
+                    style={[styles.formInput, styles.inputWithIconField]}
+                    value={expenseDate}
+                    onChangeText={setExpenseDate}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#64748b"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Lugar (opcional)</Text>
+                <View style={styles.inputWithIcon}>
+                  <MapPin size={18} color="#94a3b8" />
+                  <TextInput
+                    style={[styles.formInput, styles.inputWithIconField]}
+                    value={location}
+                    onChangeText={setLocation}
+                    placeholder="Dónde se realizó el gasto"
+                    placeholderTextColor="#64748b"
+                  />
+                </View>
               </View>
 
               {selectedTeamData && (
@@ -355,6 +446,16 @@ export default function ScanReceiptScreen() {
                   <View style={styles.teamDisplay}>
                     <Users size={20} color="#10b981" />
                     <Text style={styles.teamDisplayText}>{selectedTeamData.name}</Text>
+                  </View>
+                </View>
+              )}
+
+              {capturedImage && !manualEntry && (
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Recibo escaneado</Text>
+                  <View style={styles.receiptBadge}>
+                    <CameraIcon size={16} color="#10b981" />
+                    <Text style={styles.receiptBadgeText}>Imagen guardada</Text>
                   </View>
                 </View>
               )}
@@ -417,16 +518,19 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 24,
   },
-  teamCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    padding: 20,
+  teamCardWrapper: {
     backgroundColor: '#0f172a',
     borderRadius: 16,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#334155',
+    padding: 16,
+  },
+  teamCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 12,
   },
   teamCardIcon: {
     width: 48,
@@ -448,6 +552,30 @@ const styles = StyleSheet.create({
   teamCardMembers: {
     fontSize: 14,
     color: '#94a3b8',
+  },
+  teamCardActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  teamActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  scanButton: {
+    backgroundColor: '#10b981',
+  },
+  manualButton: {
+    backgroundColor: '#3b82f6',
+  },
+  teamActionButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
   },
   camera: {
     flex: 1,
@@ -691,5 +819,79 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#ffffff',
+  },
+  amountInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingLeft: 16,
+  },
+  currencySymbol: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#10b981',
+    marginRight: 8,
+  },
+  amountInput: {
+    flex: 1,
+    borderWidth: 0,
+    paddingLeft: 0,
+  },
+  categoryScroll: {
+    flexDirection: 'row',
+  },
+  categoryChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#334155',
+    marginRight: 8,
+  },
+  categoryChipActive: {
+    backgroundColor: '#10b981',
+    borderColor: '#10b981',
+  },
+  categoryChipText: {
+    fontSize: 14,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  categoryChipTextActive: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  inputWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    paddingLeft: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  inputWithIconField: {
+    flex: 1,
+    borderWidth: 0,
+    paddingLeft: 12,
+  },
+  receiptBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
+  },
+  receiptBadgeText: {
+    fontSize: 14,
+    color: '#10b981',
+    fontWeight: '600',
   },
 });

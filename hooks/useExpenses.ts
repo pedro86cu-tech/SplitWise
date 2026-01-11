@@ -8,6 +8,10 @@ export type ExpenseWithDetails = {
   total_amount: number;
   currency: string;
   created_at: string;
+  category: string;
+  location: string | null;
+  expense_date: string;
+  receipt_image_url: string | null;
   team: {
     name: string;
   };
@@ -58,11 +62,15 @@ export function useExpenses() {
           currency,
           created_at,
           paid_by,
+          category,
+          location,
+          expense_date,
+          receipt_image_url,
           teams(name),
           profiles:paid_by(full_name)
         `)
         .in('team_id', teamIds)
-        .order('created_at', { ascending: false })
+        .order('expense_date', { ascending: false })
         .limit(50);
 
       if (!expensesData) {
@@ -86,6 +94,10 @@ export function useExpenses() {
             total_amount: Number(expense.total_amount),
             currency: expense.currency,
             created_at: expense.created_at,
+            category: expense.category || 'general',
+            location: expense.location,
+            expense_date: expense.expense_date,
+            receipt_image_url: expense.receipt_image_url,
             team: { name: (expense.teams as any)?.name || 'Team' },
             paid_by_profile: { full_name: (expense.profiles as any)?.full_name || 'Usuario' },
             my_split: mySplit ? {

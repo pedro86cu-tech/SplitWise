@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, Modal, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, User, UserPlus, UserMinus, Crown } from 'lucide-react-native';
+import { ArrowLeft, User, UserPlus, UserMinus, Crown, History } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTeamDetails } from '@/hooks/useTeamDetails';
 import { useState } from 'react';
@@ -86,6 +86,24 @@ export default function TeamDetailsScreen() {
       </LinearGradient>
 
       <ScrollView style={styles.content}>
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.historyButton}
+            onPress={() => router.push({
+              pathname: '/team-history',
+              params: { teamId: team.id, teamName: team.name },
+            })}
+          >
+            <LinearGradient
+              colors={['#10b981', '#059669']}
+              style={styles.historyButtonGradient}
+            >
+              <History size={20} color="#ffffff" />
+              <Text style={styles.historyButtonText}>Ver Historial de Gastos</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Miembros del equipo</Text>
@@ -244,6 +262,23 @@ const styles = StyleSheet.create({
   },
   section: {
     padding: 20,
+  },
+  historyButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  historyButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+  },
+  historyButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   sectionHeader: {
     flexDirection: 'row',
