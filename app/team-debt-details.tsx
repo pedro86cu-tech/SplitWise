@@ -1,8 +1,9 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, CheckCircle, Receipt, User } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, Receipt, User, Upload, FileText } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTeamDebtDetails } from '@/hooks/useTeamDebtDetails';
+import { useState } from 'react';
 
 export default function TeamDebtDetailsScreen() {
   const router = useRouter();
@@ -10,7 +11,11 @@ export default function TeamDebtDetailsScreen() {
   const teamId = params.teamId as string;
   const teamName = params.teamName as string;
 
-  const { details, loading, markAsSettled } = useTeamDebtDetails(teamId);
+  const { details, loading, markAsSettled, uploadPaymentProof } = useTeamDebtDetails(teamId);
+  const [showProofModal, setShowProofModal] = useState(false);
+  const [selectedSplit, setSelectedSplit] = useState<{ id: string; amount: number; description: string } | null>(null);
+  const [proofUrl, setProofUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   const handleMarkAsSettled = (splitId: string, userName: string, amount: number) => {
     Alert.alert(
@@ -31,6 +36,31 @@ export default function TeamDebtDetailsScreen() {
         },
       ]
     );
+  };
+
+  const handleUploadProof = (splitId: string, amount: number, description: string) => {
+    setSelectedSplit({ id: splitId, amount, description });
+    setShowProofModal(true);
+  };
+
+  const handleSubmitProof = async () => {
+    if (!proofUrl.trim() || !selectedSplit) {
+      Alert.alert('Error', 'Por favor ingresa una URL válida del comprobante');
+      return;
+    }
+
+    setUploading(true);
+    const success = await uploadPaymentProof(selectedSplit.id, proofUrl);
+    setUploading(false);
+
+    if (success) {
+      Alert.alert('Éxito', 'Comprobante de pago enviado correctamente');
+      setShowProofModal(false);
+      setProofUrl('');
+      setSelectedSplit(null);
+    } else {
+      Alert.alert('Error', 'No se pudo enviar el comprobante');
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -153,11 +183,27 @@ export default function TeamDebtDetailsScreen() {
                         <View style={styles.debtDetails}>
                           <Text style={styles.debtDescription}>{debt.expenseDescription}</Text>
                           <Text style={styles.debtDate}>{formatDate(debt.expenseDate)}</Text>
+                          {debt.paymentProofUrl && (
+                            <View style={styles.proofBadge}>
+                              <FileText size={12} color="#10b981" />
+                              <Text style={styles.proofText}>Comprobante enviado</Text>
+                            </View>
+                          )}
                         </View>
                       </View>
-                      <Text style={[styles.debtAmount, styles.negativeAmount]}>
-                        -${debt.amount.toFixed(2)}
-                      </Text>
+                      <View style={styles.debtActions}>
+                        <Text style={[styles.debtAmount, styles.negativeAmount]}>
+                          -${debt.amount.toFixed(2)}
+                        </Text>
+                        {!debt.paymentProofUrl && (
+                          <TouchableOpacity
+                            style={styles.uploadButton}
+                            onPress={() => handleUploadProof(debt.splitId, debt.amount, debt.expenseDescription)}
+                          >
+                            <Upload size={20} color="#3b82f6" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </View>
                   ))}
                   <View style={styles.totalRow}>
@@ -180,6 +226,75 @@ export default function TeamDebtDetailsScreen() {
           </View>
         )}
       </ScrollView>
+
+      <Modal
+        visible={showProofModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowProofModal(false);
+          setProofUrl('');
+          setSelectedSplit(null);
+        }}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => {
+            setShowProofModal(false);
+            setProofUrl('');
+            setSelectedSplit(null);
+          }}
+        >
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalTitle}>Subir comprobante de pago</Text>
+            <Text style={styles.modalSubtitle}>
+              {selectedSplit?.description} - ${selectedSplit?.amount.toFixed(2)}
+            </Text>
+            <Text style={styles.modalDescription}>
+              Ingresa el link de tu comprobante de transferencia o pago
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="https://ejemplo.com/comprobante.jpg"
+              placeholderTextColor="#64748b"
+              value={proofUrl}
+              onChangeText={setProofUrl}
+              keyboardType="url"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowProofModal(false);
+                  setProofUrl('');
+                  setSelectedSplit(null);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.submitButton]}
+                onPress={handleSubmitProof}
+                disabled={uploading}
+              >
+                <LinearGradient
+                  colors={['#3b82f6', '#2563eb']}
+                  style={styles.submitButtonGradient}
+                >
+                  {uploading ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text style={styles.submitButtonText}>Enviar</Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -329,6 +444,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  uploadButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  proofBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  proofText: {
+    fontSize: 10,
+    color: '#10b981',
+    fontWeight: '600',
+  },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -362,5 +496,82 @@ const styles = StyleSheet.create({
     color: '#475569',
     marginTop: 8,
     textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#1e293b',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 16,
+    color: '#10b981',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  modalDescription: {
+    fontSize: 14,
+    color: '#94a3b8',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  input: {
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 14,
+    color: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#334155',
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  cancelButton: {
+    backgroundColor: '#334155',
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  submitButton: {
+    flex: 1,
+  },
+  submitButtonGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
   },
 });

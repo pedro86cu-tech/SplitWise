@@ -11,6 +11,7 @@ export type DebtDetail = {
   expenseId: string;
   expenseDescription: string;
   expenseDate: string;
+  paymentProofUrl?: string | null;
 };
 
 export type TeamDebtDetails = {
@@ -44,6 +45,7 @@ export function useTeamDebtDetails(teamId: string) {
           is_settled,
           user_id,
           expense_id,
+          payment_proof_url,
           expenses!inner(
             id,
             description,
@@ -69,6 +71,7 @@ export function useTeamDebtDetails(teamId: string) {
           is_settled,
           user_id,
           expense_id,
+          payment_proof_url,
           expenses!inner(
             id,
             description,
@@ -94,6 +97,7 @@ export function useTeamDebtDetails(teamId: string) {
         expenseId: split.expenses.id,
         expenseDescription: split.expenses.description,
         expenseDate: split.expenses.created_at,
+        paymentProofUrl: split.payment_proof_url,
       })) || [];
 
       const iOwe: DebtDetail[] = iOweData?.map((split: any) => ({
@@ -105,6 +109,7 @@ export function useTeamDebtDetails(teamId: string) {
         expenseId: split.expenses.id,
         expenseDescription: split.expenses.description,
         expenseDate: split.expenses.created_at,
+        paymentProofUrl: split.payment_proof_url,
       })) || [];
 
       setDetails({ owedToMe, iOwe });
@@ -119,7 +124,11 @@ export function useTeamDebtDetails(teamId: string) {
     try {
       const { error } = await supabase
         .from('expense_splits')
-        .update({ is_settled: true })
+        .update({
+          is_settled: true,
+          settled_by: user?.id,
+          settled_at: new Date().toISOString(),
+        })
         .eq('id', splitId);
 
       if (error) throw error;
@@ -132,5 +141,22 @@ export function useTeamDebtDetails(teamId: string) {
     }
   };
 
-  return { details, loading, refresh: loadDetails, markAsSettled };
+  const uploadPaymentProof = async (splitId: string, proofUrl: string) => {
+    try {
+      const { error } = await supabase
+        .from('expense_splits')
+        .update({ payment_proof_url: proofUrl })
+        .eq('id', splitId);
+
+      if (error) throw error;
+
+      await loadDetails();
+      return true;
+    } catch (error) {
+      console.error('Error uploading payment proof:', error);
+      return false;
+    }
+  };
+
+  return { details, loading, refresh: loadDetails, markAsSettled, uploadPaymentProof };
 }

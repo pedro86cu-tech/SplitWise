@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Home, History, User } from 'lucide-react-native';
+import { Home, History, User, Users } from 'lucide-react-native';
 
 export default function TabLayout() {
   return (
@@ -28,6 +28,15 @@ export default function TabLayout() {
           title: 'Inicio',
           tabBarIcon: ({ size, color }) => (
             <Home size={size} color={color} strokeWidth={2} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="teams"
+        options={{
+          title: 'Equipos',
+          tabBarIcon: ({ size, color }) => (
+            <Users size={size} color={color} strokeWidth={2} />
           ),
         }}
       />
