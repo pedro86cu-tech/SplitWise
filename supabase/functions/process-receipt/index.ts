@@ -101,7 +101,8 @@ Deno.serve(async (req: Request) => {
       result = JSON.parse(cleanContent);
     } catch (parseError) {
       console.error('Failed to parse OpenAI response:', content);
-      throw new Error(`Failed to parse OpenAI response: ${parseError.message}`);
+      const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown parse error';
+      throw new Error(`Failed to parse OpenAI response: ${errorMessage}`);
     }
 
     return new Response(
@@ -116,11 +117,12 @@ Deno.serve(async (req: Request) => {
     );
   } catch (error) {
     console.error('Error processing receipt:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Error desconocido al procesar el recibo';
     return new Response(
       JSON.stringify({
         amount: 0,
         description: 'Gasto escaneado',
-        error: error.message || 'Error desconocido al procesar el recibo',
+        error: errorMessage,
       }),
       {
         status: 200,

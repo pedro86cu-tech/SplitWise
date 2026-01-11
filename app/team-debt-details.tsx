@@ -1,9 +1,11 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, CheckCircle, Receipt, User, Upload, FileText } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, Receipt, User, Upload, FileText, Camera, ImageIcon } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTeamDebtDetails } from '@/hooks/useTeamDebtDetails';
 import { useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
+import { supabase } from '@/lib/supabase';
 
 export default function TeamDebtDetailsScreen() {
   const router = useRouter();
@@ -14,7 +16,7 @@ export default function TeamDebtDetailsScreen() {
   const { details, loading, markAsSettled, uploadPaymentProof } = useTeamDebtDetails(teamId);
   const [showProofModal, setShowProofModal] = useState(false);
   const [selectedSplit, setSelectedSplit] = useState<{ id: string; amount: number; description: string } | null>(null);
-  const [proofUrl, setProofUrl] = useState('');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
   const handleMarkAsSettled = (splitId: string, userName: string, amount: number) => {
@@ -43,23 +45,91 @@ export default function TeamDebtDetailsScreen() {
     setShowProofModal(true);
   };
 
+  const pickImageFromGallery = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permissionResult.granted) {
+      Alert.alert('Permiso requerido', 'Necesitamos acceso a tu galería para seleccionar el comprobante');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+      base64: false,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setSelectedImage(result.assets[0].uri);
+    }
+  };
+
+  const takePhoto = async () => {
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+
+    if (!permissionResult.granted) {
+      Alert.alert('Permiso requerido', 'Necesitamos acceso a tu cámara para tomar la foto');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      quality: 0.8,
+      base64: false,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setSelectedImage(result.assets[0].uri);
+    }
+  };
+
   const handleSubmitProof = async () => {
-    if (!proofUrl.trim() || !selectedSplit) {
-      Alert.alert('Error', 'Por favor ingresa una URL válida del comprobante');
+    if (!selectedImage || !selectedSplit) {
+      Alert.alert('Error', 'Por favor selecciona una imagen del comprobante');
       return;
     }
 
     setUploading(true);
-    const success = await uploadPaymentProof(selectedSplit.id, proofUrl);
-    setUploading(false);
 
-    if (success) {
-      Alert.alert('Éxito', 'Comprobante de pago enviado correctamente');
-      setShowProofModal(false);
-      setProofUrl('');
-      setSelectedSplit(null);
-    } else {
-      Alert.alert('Error', 'No se pudo enviar el comprobante');
+    try {
+      const fileName = `payment_proof_${selectedSplit.id}_${Date.now()}.jpg`;
+
+      const response = await fetch(selectedImage);
+      const blob = await response.blob();
+
+      const arrayBuffer = await new Response(blob).arrayBuffer();
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('payment-proofs')
+        .upload(fileName, arrayBuffer, {
+          contentType: 'image/jpeg',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from('payment-proofs')
+        .getPublicUrl(fileName);
+
+      const success = await uploadPaymentProof(selectedSplit.id, urlData.publicUrl);
+
+      if (success) {
+        Alert.alert('Éxito', 'Comprobante de pago enviado correctamente');
+        setShowProofModal(false);
+        setSelectedImage(null);
+        setSelectedSplit(null);
+      } else {
+        throw new Error('Failed to update payment proof');
+      }
+    } catch (error: any) {
+      console.error('Error uploading proof:', error);
+      Alert.alert('Error', 'No se pudo enviar el comprobante. Intenta de nuevo.');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -233,7 +303,7 @@ export default function TeamDebtDetailsScreen() {
         animationType="fade"
         onRequestClose={() => {
           setShowProofModal(false);
-          setProofUrl('');
+          setSelectedImage(null);
           setSelectedSplit(null);
         }}
       >
@@ -242,7 +312,7 @@ export default function TeamDebtDetailsScreen() {
           activeOpacity={1}
           onPress={() => {
             setShowProofModal(false);
-            setProofUrl('');
+            setSelectedImage(null);
             setSelectedSplit(null);
           }}
         >
@@ -252,24 +322,42 @@ export default function TeamDebtDetailsScreen() {
               {selectedSplit?.description} - ${selectedSplit?.amount.toFixed(2)}
             </Text>
             <Text style={styles.modalDescription}>
-              Ingresa el link de tu comprobante de transferencia o pago
+              Selecciona o toma una foto de tu comprobante de transferencia o pago
             </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="https://ejemplo.com/comprobante.jpg"
-              placeholderTextColor="#64748b"
-              value={proofUrl}
-              onChangeText={setProofUrl}
-              keyboardType="url"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
+
+            {selectedImage ? (
+              <View style={styles.imagePreviewContainer}>
+                <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+                <TouchableOpacity
+                  style={styles.removeImageButton}
+                  onPress={() => setSelectedImage(null)}
+                >
+                  <Text style={styles.removeImageText}>Cambiar imagen</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.imagePickers}>
+                <TouchableOpacity style={styles.imagePickerButton} onPress={takePhoto}>
+                  <View style={styles.imagePickerIcon}>
+                    <Camera size={32} color="#10b981" />
+                  </View>
+                  <Text style={styles.imagePickerText}>Tomar foto</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.imagePickerButton} onPress={pickImageFromGallery}>
+                  <View style={styles.imagePickerIcon}>
+                    <ImageIcon size={32} color="#3b82f6" />
+                  </View>
+                  <Text style={styles.imagePickerText}>Galería</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
                   setShowProofModal(false);
-                  setProofUrl('');
+                  setSelectedImage(null);
                   setSelectedSplit(null);
                 }}
               >
@@ -278,7 +366,7 @@ export default function TeamDebtDetailsScreen() {
               <TouchableOpacity
                 style={[styles.modalButton, styles.submitButton]}
                 onPress={handleSubmitProof}
-                disabled={uploading}
+                disabled={uploading || !selectedImage}
               >
                 <LinearGradient
                   colors={['#3b82f6', '#2563eb']}
@@ -531,15 +619,49 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     lineHeight: 20,
   },
-  input: {
+  imagePickers: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  imagePickerButton: {
+    flex: 1,
     backgroundColor: '#0f172a',
     borderRadius: 12,
-    padding: 16,
-    fontSize: 14,
-    color: '#ffffff',
-    borderWidth: 1,
+    padding: 20,
+    alignItems: 'center',
+    borderWidth: 2,
     borderColor: '#334155',
+    borderStyle: 'dashed',
+  },
+  imagePickerIcon: {
+    marginBottom: 8,
+  },
+  imagePickerText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  imagePreviewContainer: {
     marginBottom: 20,
+  },
+  imagePreview: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    backgroundColor: '#0f172a',
+  },
+  removeImageButton: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#334155',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  removeImageText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94a3b8',
   },
   modalButtons: {
     flexDirection: 'row',
