@@ -10,7 +10,7 @@ export default function TeamDetailsScreen() {
   const params = useLocalSearchParams();
   const teamId = params.teamId as string;
 
-  const { team, loading, removeMember } = useTeamDetails(teamId);
+  const { team, loading, removeMember, addMember } = useTeamDetails(teamId);
   const [showAddMember, setShowAddMember] = useState(false);
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [addingMember, setAddingMember] = useState(false);
@@ -44,10 +44,16 @@ export default function TeamDetailsScreen() {
     }
 
     setAddingMember(true);
-    Alert.alert('Funcionalidad pendiente', 'La adición de miembros por email requiere implementación adicional en el backend');
+    const result = await addMember(newMemberEmail);
     setAddingMember(false);
-    setShowAddMember(false);
-    setNewMemberEmail('');
+
+    if (result.success) {
+      Alert.alert('Éxito', 'Miembro agregado al equipo correctamente');
+      setShowAddMember(false);
+      setNewMemberEmail('');
+    } else {
+      Alert.alert('Error', result.error || 'No se pudo agregar el miembro');
+    }
   };
 
   if (loading || !team) {

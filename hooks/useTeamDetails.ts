@@ -112,16 +112,20 @@ export function useTeamDetails(teamId: string) {
 
   const addMember = async (email: string) => {
     try {
+      const trimmedEmail = email.trim().toLowerCase();
+
       const { data: userData, error: userError } = await supabase
         .from('profiles')
         .select('id')
-        .eq('id', (
-          await supabase.auth.admin.listUsers()
-        ).data.users.find(u => u.email === email)?.id || '')
+        .eq('email', trimmedEmail)
         .maybeSingle();
 
       if (userError || !userData) {
         return { success: false, error: 'Usuario no encontrado' };
+      }
+
+      if (userData.id === user?.id) {
+        return { success: false, error: 'No puedes agregarte a ti mismo' };
       }
 
       const { error: memberError } = await supabase
