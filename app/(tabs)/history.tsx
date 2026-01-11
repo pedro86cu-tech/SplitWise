@@ -1,10 +1,12 @@
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Receipt, Clock } from 'lucide-react-native';
+import { Receipt, Clock, ChevronRight } from 'lucide-react-native';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useState } from 'react';
+import { useRouter } from 'expo-router';
 
 export default function HistoryScreen() {
+  const router = useRouter();
   const { expenses, loading, refresh } = useExpenses();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -12,6 +14,13 @@ export default function HistoryScreen() {
     setRefreshing(true);
     await refresh();
     setRefreshing(false);
+  };
+
+  const handleExpensePress = (expenseId: string) => {
+    router.push({
+      pathname: '/expense-details',
+      params: { expenseId },
+    });
   };
 
   const formatDate = (dateString: string) => {
@@ -62,7 +71,12 @@ export default function HistoryScreen() {
         ) : (
           <View style={styles.list}>
             {expenses.map((expense) => (
-              <View key={expense.id} style={styles.expenseCard}>
+              <TouchableOpacity
+                key={expense.id}
+                style={styles.expenseCard}
+                onPress={() => handleExpensePress(expense.id)}
+                activeOpacity={0.7}
+              >
                 <View style={styles.expenseIcon}>
                   <Receipt size={20} color="#10b981" />
                 </View>
@@ -99,7 +113,11 @@ export default function HistoryScreen() {
                     </View>
                   )}
                 </View>
-              </View>
+
+                <View style={styles.chevronIcon}>
+                  <ChevronRight size={20} color="#64748b" />
+                </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}
@@ -228,5 +246,8 @@ const styles = StyleSheet.create({
     color: '#f59e0b',
     fontWeight: '600',
     marginTop: 2,
+  },
+  chevronIcon: {
+    marginLeft: 8,
   },
 });
