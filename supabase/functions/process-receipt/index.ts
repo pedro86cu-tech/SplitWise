@@ -99,22 +99,47 @@ Deno.serve(async (req: Request) => {
     console.log('=== Calling OpenAI API ===');
     console.log('Document type:', isPDF ? 'PDF (text extraction)' : 'Image');
 
-    const systemPrompt = `You are a credit card statement and receipt analyzer.
-         First, determine if this is a credit card statement with multiple cardholders or a single receipt.
+    const systemPrompt = `You are a credit card statement and receipt analyzer. Analyze the document and return ONLY valid JSON with no additional text or explanations.
 
-         For CREDIT CARD STATEMENTS with multiple cardholders:
-         - Return: {"type": "statement", "expenses": [{"cardholder": "Name", "transactions": [{"amount": number, "description": "string", "date": "YYYY-MM-DD", "currency": "USD|UYU|ARS|etc"}]}]}
-         - Extract the cardholder name from sections like "TARJETA XXXX - NAME"
-         - For each cardholder, list their transactions with amount, description, date, and currency
-         - Currency must be ISO code: USD for dollars, UYU for pesos uruguayos, ARS for pesos argentinos, etc.
-         - If currency symbol is $, determine from context if it's USD, UYU, ARS, etc.
+CRITICAL: Your response must be ONLY the JSON object, nothing else. Do not include markdown code blocks, backticks, or any text before or after the JSON.
 
-         For SINGLE RECEIPTS:
-         - Return: {"type": "receipt", "amount": number, "description": "string", "currency": "USD|UYU|ARS|etc"}
-         - Extract the total amount, brief description, and currency
-         - Currency must be ISO code: USD, UYU, ARS, etc.
+CREDIT CARD STATEMENT FORMAT:
+If this is a credit card statement with multiple cardholders (like BBVA, Santander, etc.):
+{
+  "type": "statement",
+  "expenses": [
+    {
+      "cardholder": "FULL NAME AS IT APPEARS",
+      "transactions": [
+        {
+          "amount": 1234.56,
+          "description": "Brief description",
+          "date": "2025-01-15",
+          "currency": "UYU"
+        }
+      ]
+    }
+  ]
+}
 
-         Return ONLY valid JSON, no additional text.`;
+IMPORTANT FOR STATEMENTS:
+- Extract cardholder names from sections like "TARJETA XXXX - NAME" or similar headers
+- Preserve the EXACT name format from the statement (e.g., "AYALA PEDRO", "ALEJANDRA LONDONO")
+- Each transaction must have: amount (number), description (string), date (YYYY-MM-DD), currency (ISO code)
+- Common currencies: UYU (Uruguayan Peso), USD (US Dollar), ARS (Argentine Peso), EUR (Euro)
+- If you see "$" symbol, determine from document context if it's UYU, USD, or ARS
+- For Uruguayan documents with "$" and no other indication, use "UYU"
+
+SINGLE RECEIPT FORMAT:
+If this is a single receipt/invoice:
+{
+  "type": "receipt",
+  "amount": 1234.56,
+  "description": "Brief description",
+  "currency": "UYU"
+}
+
+Return ONLY the JSON object.`;
 
     let messageContent;
 
@@ -196,11 +221,20 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log('=== Parsing Response ===');
-    console.log('Raw content:', content);
+    console.log('Raw content length:', content.length);
+    console.log('Raw content (first 500 chars):', content.substring(0, 500));
+    console.log('Raw content (last 200 chars):', content.substring(Math.max(0, content.length - 200)));
 
     let result;
     try {
-      let cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      let cleanContent = content
+        .replace(/```json\n?/g, '')
+        .replace(/```\n?/g, '')
+        .replace(/^[^{]*/g, '')
+        .replace(/[^}]*$/g, '')
+        .trim();
+
+      console.log('After removing markdown:', cleanContent.substring(0, 200));
 
       cleanContent = cleanContent
         .replace(/,\s*([\]}])/g, '$1')
@@ -210,26 +244,34 @@ Deno.serve(async (req: Request) => {
         .replace(/\s+/g, ' ')
         .replace(/,\s*,/g, ',');
 
-      console.log('Cleaned content:', cleanContent);
+      console.log('Cleaned content (first 500 chars):', cleanContent.substring(0, 500));
 
       try {
         result = JSON.parse(cleanContent);
+        console.log('✅ JSON parsed successfully');
       } catch (firstError) {
+        console.log('❌ First parse attempt failed, trying to extract JSON...');
         const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          console.log('Attempting to extract JSON from match:', jsonMatch[0]);
+          console.log('Found JSON match, attempting to parse...');
           result = JSON.parse(jsonMatch[0]);
+          console.log('✅ JSON extracted and parsed successfully');
         } else {
+          console.error('❌ No JSON object found in content');
           throw firstError;
         }
       }
 
-      console.log('Parsed result:', JSON.stringify(result, null, 2));
+      console.log('Parsed result type:', result.type);
+      console.log('Parsed result keys:', Object.keys(result));
+      console.log('Full parsed result:', JSON.stringify(result, null, 2));
     } catch (parseError) {
       console.error('=== Parse Error ===');
-      console.error('Failed to parse OpenAI response:', content);
+      console.error('❌ Failed to parse OpenAI response');
+      console.error('Raw content:', content);
       const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown parse error';
       console.error('Error message:', errorMessage);
+      console.error('Error details:', parseError);
 
       return new Response(
         JSON.stringify({
@@ -237,7 +279,7 @@ Deno.serve(async (req: Request) => {
           amount: 0,
           description: 'Error al procesar - Ingresa datos manualmente',
           currency: 'USD',
-          error: `Error de formato en la respuesta del AI. Ingresa los datos manualmente.`,
+          error: `Error de formato: ${errorMessage}. Revisa los logs en Supabase Dashboard.`,
         }),
         {
           status: 200,
