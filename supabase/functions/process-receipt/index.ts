@@ -27,16 +27,17 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Check if it's a document (PDF, DOC, etc.) instead of an image
-    const isDocument = fileType && (fileType.includes('pdf') || fileType.includes('doc'));
+    // Check if it's a PDF document
+    const isPDF = fileType && fileType.includes('pdf');
 
-    if (isDocument) {
-      // For documents, we return a default response since OpenAI Vision API doesn't support them
-      console.log('Document file detected, returning default values');
+    // DOC files are not supported
+    if (fileType && fileType.includes('doc') && !isPDF) {
+      console.log('DOC file detected, returning default values');
       return new Response(
         JSON.stringify({
+          type: 'receipt',
           amount: 0,
-          description: 'Documento cargado - Ingresa los datos manualmente',
+          description: 'Documento Word - Ingresa los datos manualmente',
         }),
         {
           status: 200,
@@ -51,6 +52,7 @@ Deno.serve(async (req: Request) => {
       console.error('OPENAI_API_KEY not configured in Supabase environment');
       return new Response(
         JSON.stringify({
+          type: 'receipt',
           amount: 0,
           description: 'Gasto escaneado',
           error: 'OPENAI_API_KEY no configurada. Ve a Supabase Dashboard > Project Settings > Edge Functions > Add Secret',
@@ -62,7 +64,29 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    console.log('Calling OpenAI API for image processing...');
+    console.log('Calling OpenAI API for document processing...');
+
+    // Determine the prompt based on whether it's a PDF or image
+    const systemPrompt = isPDF
+      ? `You are a credit card statement and receipt analyzer.
+         First, determine if this is a credit card statement with multiple cardholders or a single receipt.
+
+         For CREDIT CARD STATEMENTS with multiple cardholders:
+         - Return: {"type": "statement", "expenses": [{"cardholder": "Name", "transactions": [{"amount": number, "description": "string", "date": "YYYY-MM-DD"}]}]}
+         - Extract the cardholder name from sections like "TARJETA XXXX - NAME"
+         - For each cardholder, list their transactions with amount, description, and date
+         - Use the original currency (convert if needed, use peso sign $ for pesos and U$S or USD for dollars)
+
+         For SINGLE RECEIPTS:
+         - Return: {"type": "receipt", "amount": number, "description": "string"}
+         - Extract the total amount and brief description
+
+         Return ONLY valid JSON, no additional text.`
+      : 'You are a receipt analyzer. Extract the total amount and a brief description from receipts. Return ONLY valid JSON: {"type": "receipt", "amount": number, "description": "string"}. If you cannot find the total, return 0 for amount.';
+
+    const userPrompt = isPDF
+      ? 'Analyze this document. If it\'s a credit card statement with multiple cardholders, extract all cardholders and their transactions. If it\'s a single receipt, extract the amount and description. Return ONLY JSON.'
+      : 'Extract the total amount and description from this receipt. Return ONLY JSON format: {"type": "receipt", "amount": number, "description": string}. Do not include any other text.';
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -71,29 +95,31 @@ Deno.serve(async (req: Request) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o',
         messages: [
           {
             role: 'system',
-            content: 'You are a receipt analyzer. Extract the total amount and a brief description from receipts. Return ONLY valid JSON with fields: amount (number) and description (string). If you cannot find the total, return 0 for amount. Example: {"amount": 25.50, "description": "Restaurant bill"}',
+            content: systemPrompt,
           },
           {
             role: 'user',
             content: [
               {
                 type: 'text',
-                text: 'Extract the total amount and description from this receipt. Return ONLY JSON format: {"amount": number, "description": string}. Do not include any other text.',
+                text: userPrompt,
               },
               {
                 type: 'image_url',
                 image_url: {
-                  url: `data:image/jpeg;base64,${image}`,
+                  url: isPDF
+                    ? `data:application/pdf;base64,${image}`
+                    : `data:image/jpeg;base64,${image}`,
                 },
               },
             ],
           },
         ],
-        max_tokens: 300,
+        max_tokens: 4000,
         temperature: 0.1,
       }),
     });
@@ -123,21 +149,39 @@ Deno.serve(async (req: Request) => {
       throw new Error(`Failed to parse OpenAI response: ${errorMessage}`);
     }
 
-    return new Response(
-      JSON.stringify({
-        amount: result.amount || 0,
-        description: result.description || 'Gasto escaneado',
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    // Handle different response types
+    if (result.type === 'statement' && result.expenses) {
+      // Credit card statement with multiple cardholders
+      return new Response(
+        JSON.stringify({
+          type: 'statement',
+          expenses: result.expenses,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    } else {
+      // Single receipt
+      return new Response(
+        JSON.stringify({
+          type: 'receipt',
+          amount: result.amount || 0,
+          description: result.description || 'Gasto escaneado',
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
   } catch (error) {
     console.error('Error processing receipt:', error);
     const errorMessage = error instanceof Error ? error.message : 'Error desconocido al procesar el recibo';
     return new Response(
       JSON.stringify({
+        type: 'receipt',
         amount: 0,
         description: 'Gasto escaneado',
         error: errorMessage,

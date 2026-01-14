@@ -26,6 +26,8 @@ export default function ScanReceiptScreen() {
   const [showCamera, setShowCamera] = useState(false);
   const [manualEntry, setManualEntry] = useState(false);
   const [teamSelected, setTeamSelected] = useState(false);
+  const [statementData, setStatementData] = useState<any>(null);
+  const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
   const cameraRef = useRef<any>(null);
   const router = useRouter();
   const { user } = useAuth();
@@ -263,16 +265,23 @@ export default function ScanReceiptScreen() {
 
       const data = await response.json();
 
-      setAmount(data.amount ? data.amount.toString() : '');
-      setDescription(data.description || 'Gasto procesado');
-      setShowExpenseForm(true);
+      // Check if it's a credit card statement with multiple cardholders
+      if (data.type === 'statement' && data.expenses) {
+        setStatementData(data.expenses);
+        setShowExpenseForm(true);
+      } else {
+        // Single receipt
+        setAmount(data.amount ? data.amount.toString() : '');
+        setDescription(data.description || 'Gasto procesado');
+        setShowExpenseForm(true);
 
-      if (!data.amount || data.amount === 0) {
-        Alert.alert(
-          'Procesamiento Manual',
-          'No se pudo extraer el monto automáticamente. Por favor ingresa el monto manualmente.',
-          [{ text: 'OK' }]
-        );
+        if (!data.amount || data.amount === 0) {
+          Alert.alert(
+            'Procesamiento Manual',
+            'No se pudo extraer el monto automáticamente. Por favor ingresa el monto manualmente.',
+            [{ text: 'OK' }]
+          );
+        }
       }
     } catch (error: any) {
       console.error('Error processing receipt:', error);
@@ -285,6 +294,87 @@ export default function ScanReceiptScreen() {
       setShowExpenseForm(true);
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const handleCreateStatementExpenses = async () => {
+    if (!selectedTeam || !statementData || selectedTransactions.size === 0 || !user) {
+      Alert.alert('Error', 'Por favor selecciona al menos una transacción');
+      return;
+    }
+
+    try {
+      const { data: teamMembers } = await supabase
+        .from('team_members')
+        .select('user_id, profiles(display_name, email)')
+        .eq('team_id', selectedTeam);
+
+      const expensesToCreate = [];
+
+      for (const txId of selectedTransactions) {
+        const [cardIndex, txIndex] = txId.split('-').map(Number);
+        const cardholderData = statementData[cardIndex];
+        const transaction = cardholderData.transactions[txIndex];
+
+        const cardholderName = cardholderData.cardholder.toUpperCase();
+
+        let paidBy = user.id;
+        if (teamMembers) {
+          for (const member of teamMembers) {
+            const memberName = (member.profiles?.display_name || member.profiles?.email || '').toUpperCase();
+            if (memberName.includes(cardholderName) || cardholderName.includes(memberName)) {
+              paidBy = member.user_id;
+              break;
+            }
+          }
+        }
+
+        expensesToCreate.push({
+          transaction,
+          cardholderName,
+          paidBy
+        });
+      }
+
+      for (const { transaction, cardholderName, paidBy } of expensesToCreate) {
+        const { data: expense, error: expenseError } = await supabase
+          .from('expenses')
+          .insert({
+            team_id: selectedTeam,
+            description: `${cardholderName} - ${transaction.description}`,
+            total_amount: parseFloat(transaction.amount),
+            paid_by: paidBy,
+            receipt_image_url: documentFile?.uri || null,
+            category: 'general',
+            location: null,
+            expense_date: transaction.date || expenseDate,
+          })
+          .select()
+          .single();
+
+        if (expenseError) throw expenseError;
+
+        if (teamMembers && teamMembers.length > 0) {
+          const splitAmount = parseFloat(transaction.amount) / teamMembers.length;
+          const splits = teamMembers.map(member => ({
+            expense_id: expense.id,
+            user_id: member.user_id,
+            amount: splitAmount,
+            is_settled: member.user_id === paidBy,
+          }));
+
+          await supabase.from('expense_splits').insert(splits);
+        }
+      }
+
+      Alert.alert('Éxito', `${expensesToCreate.length} gastos agregados correctamente`, [
+        {
+          text: 'OK',
+          onPress: () => router.back(),
+        },
+      ]);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'No se pudo crear los gastos');
     }
   };
 
@@ -518,11 +608,16 @@ export default function ScanReceiptScreen() {
           />
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Confirmar Gasto</Text>
+              <Text style={styles.modalTitle}>
+                {statementData ? 'Estado de Cuenta' : 'Confirmar Gasto'}
+              </Text>
               <TouchableOpacity
                 onPress={() => {
                   setShowExpenseForm(false);
                   setCapturedImage(null);
+                  setDocumentFile(null);
+                  setStatementData(null);
+                  setSelectedTransactions(new Set());
                   router.back();
                 }}
               >
@@ -535,6 +630,50 @@ export default function ScanReceiptScreen() {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
+              {statementData ? (
+                <View>
+                  <Text style={styles.statementSubtitle}>
+                    Selecciona las transacciones a importar
+                  </Text>
+                  {statementData.map((cardholderData: any, cardIndex: number) => (
+                    <View key={cardIndex} style={styles.cardholderSection}>
+                      <View style={styles.cardholderHeader}>
+                        <Users size={20} color="#3b82f6" />
+                        <Text style={styles.cardholderName}>{cardholderData.cardholder}</Text>
+                      </View>
+                      {cardholderData.transactions.map((transaction: any, txIndex: number) => {
+                        const txId = `${cardIndex}-${txIndex}`;
+                        const isSelected = selectedTransactions.has(txId);
+                        return (
+                          <TouchableOpacity
+                            key={txId}
+                            style={[styles.transactionCard, isSelected && styles.transactionCardSelected]}
+                            onPress={() => {
+                              const newSelected = new Set(selectedTransactions);
+                              if (isSelected) {
+                                newSelected.delete(txId);
+                              } else {
+                                newSelected.add(txId);
+                              }
+                              setSelectedTransactions(newSelected);
+                            }}
+                          >
+                            <View style={styles.transactionCheckbox}>
+                              {isSelected && <Check size={16} color="#ffffff" />}
+                            </View>
+                            <View style={styles.transactionDetails}>
+                              <Text style={styles.transactionDescription}>{transaction.description}</Text>
+                              <Text style={styles.transactionDate}>{transaction.date}</Text>
+                            </View>
+                            <Text style={styles.transactionAmount}>${transaction.amount}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View>
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Descripción *</Text>
                 <TextInput
@@ -665,18 +804,29 @@ export default function ScanReceiptScreen() {
                   </View>
                 </View>
               )}
+                </View>
+              )}
 
               <TouchableOpacity
-                style={[styles.submitButton, !amount && styles.submitButtonDisabled]}
-                onPress={handleCreateExpense}
-                disabled={!amount}
+                style={[
+                  styles.submitButton,
+                  statementData
+                    ? selectedTransactions.size === 0 && styles.submitButtonDisabled
+                    : !amount && styles.submitButtonDisabled
+                ]}
+                onPress={statementData ? handleCreateStatementExpenses : handleCreateExpense}
+                disabled={statementData ? selectedTransactions.size === 0 : !amount}
               >
                 <LinearGradient
                   colors={['#10b981', '#059669']}
                   style={styles.submitButtonGradient}
                 >
                   <Check size={20} color="#ffffff" />
-                  <Text style={styles.submitButtonText}>Crear Gasto</Text>
+                  <Text style={styles.submitButtonText}>
+                    {statementData
+                      ? `Crear ${selectedTransactions.size} Gasto${selectedTransactions.size !== 1 ? 's' : ''}`
+                      : 'Crear Gasto'}
+                  </Text>
                 </LinearGradient>
               </TouchableOpacity>
               <View style={{ height: 40 }} />
@@ -1219,5 +1369,70 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     textTransform: 'uppercase',
     fontWeight: '600',
+  },
+  statementSubtitle: {
+    fontSize: 14,
+    color: '#94a3b8',
+    marginBottom: 16,
+  },
+  cardholderSection: {
+    marginBottom: 24,
+  },
+  cardholderHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  cardholderName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3b82f6',
+  },
+  transactionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    backgroundColor: '#1e293b',
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  transactionCardSelected: {
+    borderColor: '#10b981',
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+  },
+  transactionCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#64748b',
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  transactionDetails: {
+    flex: 1,
+  },
+  transactionDescription: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 2,
+  },
+  transactionDate: {
+    fontSize: 12,
+    color: '#94a3b8',
+  },
+  transactionAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#10b981',
   },
 });
