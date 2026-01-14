@@ -1,20 +1,40 @@
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Receipt, Clock, ChevronRight } from 'lucide-react-native';
+import { Receipt, Clock, ChevronRight, Filter } from 'lucide-react-native';
 import { useExpenses } from '@/hooks/useExpenses';
+import { useTeams } from '@/hooks/useTeams';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 
 export default function HistoryScreen() {
   const router = useRouter();
   const { expenses, loading, refresh } = useExpenses();
+  const { teams } = useTeams();
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
 
   const onRefresh = async () => {
     setRefreshing(true);
     await refresh();
     setRefreshing(false);
   };
+
+  const filteredExpenses = selectedTeam
+    ? expenses.filter(exp => {
+        const teamName = exp.team.name.toLowerCase();
+        const selectedTeamName = teams?.find(t => t.id === selectedTeam)?.name.toLowerCase();
+        return teamName === selectedTeamName;
+      })
+    : expenses;
+
+  const groupedExpenses = filteredExpenses.reduce((groups: { [key: string]: typeof expenses }, expense) => {
+    const teamName = expense.team.name;
+    if (!groups[teamName]) {
+      groups[teamName] = [];
+    }
+    groups[teamName].push(expense);
+    return groups;
+  }, {});
 
   const handleExpensePress = (expenseId: string) => {
     router.push({
@@ -48,9 +68,37 @@ export default function HistoryScreen() {
       >
         <View style={styles.headerContent}>
           <Text style={styles.title}>Historial</Text>
-          <Text style={styles.subtitle}>Todas tus transacciones</Text>
+          <Text style={styles.subtitle}>
+            {selectedTeam
+              ? teams?.find(t => t.id === selectedTeam)?.name
+              : 'Todas tus transacciones'}
+          </Text>
         </View>
       </LinearGradient>
+
+      <View style={styles.filterSection}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+          <TouchableOpacity
+            style={[styles.filterChip, !selectedTeam && styles.filterChipActive]}
+            onPress={() => setSelectedTeam(null)}
+          >
+            <Text style={[styles.filterChipText, !selectedTeam && styles.filterChipTextActive]}>
+              Todos
+            </Text>
+          </TouchableOpacity>
+          {teams?.map((team) => (
+            <TouchableOpacity
+              key={team.id}
+              style={[styles.filterChip, selectedTeam === team.id && styles.filterChipActive]}
+              onPress={() => setSelectedTeam(team.id)}
+            >
+              <Text style={[styles.filterChipText, selectedTeam === team.id && styles.filterChipTextActive]}>
+                {team.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
       <ScrollView
         style={styles.content}
@@ -62,7 +110,7 @@ export default function HistoryScreen() {
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>Cargando...</Text>
           </View>
-        ) : expenses.length === 0 ? (
+        ) : filteredExpenses.length === 0 ? (
           <View style={styles.emptyState}>
             <Clock size={48} color="#64748b" />
             <Text style={styles.emptyText}>No hay transacciones</Text>
@@ -70,7 +118,15 @@ export default function HistoryScreen() {
           </View>
         ) : (
           <View style={styles.list}>
-            {expenses.map((expense) => (
+            {Object.entries(groupedExpenses).map(([teamName, teamExpenses]) => (
+              <View key={teamName} style={styles.teamSection}>
+                {!selectedTeam && (
+                  <View style={styles.teamHeader}>
+                    <Text style={styles.teamName}>{teamName}</Text>
+                    <Text style={styles.teamCount}>{teamExpenses.length} gastos</Text>
+                  </View>
+                )}
+                {teamExpenses.map((expense) => (
               <TouchableOpacity
                 key={expense.id}
                 style={styles.expenseCard}
@@ -118,6 +174,8 @@ export default function HistoryScreen() {
                   <ChevronRight size={20} color="#64748b" />
                 </View>
               </TouchableOpacity>
+                ))}
+              </View>
             ))}
           </View>
         )}
@@ -150,6 +208,53 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  filterSection: {
+    backgroundColor: '#1e293b',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+    paddingVertical: 12,
+  },
+  filterScroll: {
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#334155',
+    marginRight: 8,
+  },
+  filterChipActive: {
+    backgroundColor: '#10b981',
+  },
+  filterChipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  filterChipTextActive: {
+    color: '#ffffff',
+  },
+  teamSection: {
+    marginBottom: 24,
+  },
+  teamHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  teamName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  teamCount: {
+    fontSize: 14,
+    color: '#64748b',
   },
   emptyState: {
     alignItems: 'center',

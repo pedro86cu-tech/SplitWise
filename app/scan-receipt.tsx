@@ -324,6 +324,41 @@ export default function ScanReceiptScreen() {
     }
   };
 
+  const matchCardholderToMember = (cardholderName: string, teamMembers: any[]) => {
+    const cleanCardholder = cardholderName.toUpperCase().trim();
+    const cardholderParts = cleanCardholder.split(/\s+/);
+
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (const member of teamMembers) {
+      const displayName = (member.profiles?.display_name || '').toUpperCase().trim();
+      const email = (member.profiles?.email || '').toUpperCase().trim();
+      const emailName = email.split('@')[0];
+
+      const nameParts = displayName.split(/\s+/);
+
+      let score = 0;
+
+      for (const cardPart of cardholderParts) {
+        if (displayName.includes(cardPart)) score += 2;
+        if (nameParts.some(np => np === cardPart)) score += 3;
+        if (emailName.includes(cardPart.toLowerCase())) score += 1;
+      }
+
+      for (const namePart of nameParts) {
+        if (cleanCardholder.includes(namePart)) score += 1;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = member;
+      }
+    }
+
+    return bestMatch;
+  };
+
   const handleCreateStatementExpenses = async () => {
     if (!selectedTeam || !statementData || selectedTransactions.size === 0 || !user) {
       Alert.alert('Error', 'Por favor selecciona al menos una transacción');
@@ -336,31 +371,58 @@ export default function ScanReceiptScreen() {
         .select('user_id, profiles(display_name, email)')
         .eq('team_id', selectedTeam);
 
+      if (!teamMembers || teamMembers.length === 0) {
+        Alert.alert(
+          'Error',
+          'Este team no tiene miembros. Por favor agrega los usuarios que aparecen en el estado de cuenta al team antes de procesar.'
+        );
+        return;
+      }
+
       const expensesToCreate = [];
+      const unmatchedCardholders = [];
 
       for (const txId of selectedTransactions) {
         const [cardIndex, txIndex] = txId.split('-').map(Number);
         const cardholderData = statementData[cardIndex];
         const transaction = cardholderData.transactions[txIndex];
 
-        const cardholderName = cardholderData.cardholder.toUpperCase();
+        const cardholderName = cardholderData.cardholder;
+        const matchedMember = matchCardholderToMember(cardholderName, teamMembers);
 
-        let paidBy = user.id;
-        if (teamMembers) {
-          for (const member of teamMembers) {
-            const memberName = (member.profiles?.display_name || member.profiles?.email || '').toUpperCase();
-            if (memberName.includes(cardholderName) || cardholderName.includes(memberName)) {
-              paidBy = member.user_id;
-              break;
-            }
+        if (matchedMember) {
+          expensesToCreate.push({
+            transaction,
+            cardholderName,
+            paidBy: matchedMember.user_id,
+            matchedTo: matchedMember.profiles?.display_name || matchedMember.profiles?.email
+          });
+        } else {
+          if (!unmatchedCardholders.includes(cardholderName)) {
+            unmatchedCardholders.push(cardholderName);
           }
+          expensesToCreate.push({
+            transaction,
+            cardholderName,
+            paidBy: user.id,
+            matchedTo: 'No encontrado - asignado a ti'
+          });
         }
+      }
 
-        expensesToCreate.push({
-          transaction,
-          cardholderName,
-          paidBy
+      if (unmatchedCardholders.length > 0) {
+        const proceed = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'Usuarios No Encontrados',
+            `No se encontraron matches para:\n\n${unmatchedCardholders.join('\n')}\n\nEstos gastos se asignarán a ti. Los miembros del team son:\n\n${teamMembers.map(m => `• ${m.profiles?.display_name || m.profiles?.email}`).join('\n')}\n\n¿Continuar?`,
+            [
+              { text: 'Cancelar', onPress: () => resolve(false), style: 'cancel' },
+              { text: 'Continuar', onPress: () => resolve(true) }
+            ]
+          );
         });
+
+        if (!proceed) return;
       }
 
       for (const { transaction, cardholderName, paidBy } of expensesToCreate) {
@@ -675,13 +737,33 @@ export default function ScanReceiptScreen() {
                     const allSelected = cardholderTxIds.every((txId: string) => selectedTransactions.has(txId));
                     const someSelected = cardholderTxIds.some((txId: string) => selectedTransactions.has(txId));
 
+                    const selectedTeamData = teams?.find(t => t.id === selectedTeam);
+                    const getMatchPreview = async () => {
+                      if (!selectedTeam) return null;
+                      const { data: teamMembers } = await supabase
+                        .from('team_members')
+                        .select('user_id, profiles(display_name, email)')
+                        .eq('team_id', selectedTeam);
+
+                      if (!teamMembers) return null;
+                      const matched = matchCardholderToMember(cardholderData.cardholder, teamMembers);
+                      return matched?.profiles?.display_name || matched?.profiles?.email || null;
+                    };
+
                     return (
                       <View key={cardIndex} style={styles.cardholderSection}>
                         <View style={styles.cardholderHeader}>
                           <Users size={20} color="#3b82f6" />
-                          <Text style={styles.cardholderName}>{cardholderData.cardholder}</Text>
+                          <View style={styles.cardholderInfo}>
+                            <Text style={styles.cardholderName}>{cardholderData.cardholder}</Text>
+                            {selectedTeam && (
+                              <Text style={styles.cardholderMatch}>
+                                Team: {selectedTeamData?.name}
+                              </Text>
+                            )}
+                          </View>
                           <Text style={styles.transactionCount}>
-                            {cardholderData.transactions.length} transacciones
+                            {cardholderData.transactions.length} tx
                           </Text>
                           <TouchableOpacity
                             style={styles.selectAllButton}
@@ -1502,6 +1584,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#3b82f6',
+  },
+  cardholderInfo: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  cardholderMatch: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
   },
   transactionCard: {
     flexDirection: 'row',
