@@ -106,14 +106,16 @@ Deno.serve(async (req: Request) => {
          First, determine if this is a credit card statement with multiple cardholders or a single receipt.
 
          For CREDIT CARD STATEMENTS with multiple cardholders:
-         - Return: {"type": "statement", "expenses": [{"cardholder": "Name", "transactions": [{"amount": number, "description": "string", "date": "YYYY-MM-DD"}]}]}
+         - Return: {"type": "statement", "expenses": [{"cardholder": "Name", "transactions": [{"amount": number, "description": "string", "date": "YYYY-MM-DD", "currency": "USD|UYU|ARS|etc"}]}]}
          - Extract the cardholder name from sections like "TARJETA XXXX - NAME"
-         - For each cardholder, list their transactions with amount, description, and date
-         - Use the original currency (convert if needed, use peso sign $ for pesos and U$S or USD for dollars)
+         - For each cardholder, list their transactions with amount, description, date, and currency
+         - Currency must be ISO code: USD for dollars, UYU for pesos uruguayos, ARS for pesos argentinos, etc.
+         - If currency symbol is $, determine from context if it's USD, UYU, ARS, etc.
 
          For SINGLE RECEIPTS:
-         - Return: {"type": "receipt", "amount": number, "description": "string"}
-         - Extract the total amount and brief description
+         - Return: {"type": "receipt", "amount": number, "description": "string", "currency": "USD|UYU|ARS|etc"}
+         - Extract the total amount, brief description, and currency
+         - Currency must be ISO code: USD, UYU, ARS, etc.
 
          Return ONLY valid JSON, no additional text.`;
 
@@ -238,6 +240,7 @@ Deno.serve(async (req: Request) => {
       console.log('Detected single receipt');
       console.log('Amount:', result.amount);
       console.log('Description:', result.description);
+      console.log('Currency:', result.currency);
 
       // Single receipt
       return new Response(
@@ -245,6 +248,7 @@ Deno.serve(async (req: Request) => {
           type: 'receipt',
           amount: result.amount || 0,
           description: result.description || 'Gasto escaneado',
+          currency: result.currency || 'USD',
         }),
         {
           status: 200,

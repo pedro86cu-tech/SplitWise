@@ -19,6 +19,7 @@ export default function ScanReceiptScreen() {
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
+  const [currency, setCurrency] = useState('USD');
   const [category, setCategory] = useState('general');
   const [location, setLocation] = useState('');
   const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
@@ -42,6 +43,14 @@ export default function ScanReceiptScreen() {
     { value: 'utilities', label: 'Servicios' },
     { value: 'health', label: 'Salud' },
     { value: 'other', label: 'Otro' },
+  ];
+
+  const CURRENCIES = [
+    { value: 'USD', label: 'USD ($)', symbol: '$' },
+    { value: 'UYU', label: 'UYU ($)', symbol: '$' },
+    { value: 'ARS', label: 'ARS ($)', symbol: '$' },
+    { value: 'EUR', label: 'EUR (€)', symbol: '€' },
+    { value: 'BRL', label: 'BRL (R$)', symbol: 'R$' },
   ];
 
   useEffect(() => {
@@ -287,9 +296,10 @@ export default function ScanReceiptScreen() {
         setShowExpenseForm(true);
       } else {
         // Single receipt
-        console.log('Single receipt detected. Amount:', data.amount, 'Description:', data.description);
+        console.log('Single receipt detected. Amount:', data.amount, 'Description:', data.description, 'Currency:', data.currency);
         setAmount(data.amount ? data.amount.toString() : '');
         setDescription(data.description || 'Gasto procesado');
+        setCurrency(data.currency || 'USD');
         setShowExpenseForm(true);
 
         if (!data.amount || data.amount === 0) {
@@ -354,12 +364,16 @@ export default function ScanReceiptScreen() {
       }
 
       for (const { transaction, cardholderName, paidBy } of expensesToCreate) {
+        const transactionAmount = parseFloat(transaction.amount);
+        const transactionCurrency = transaction.currency || 'USD';
+
         const { data: expense, error: expenseError } = await supabase
           .from('expenses')
           .insert({
             team_id: selectedTeam,
             description: `${cardholderName} - ${transaction.description}`,
-            total_amount: parseFloat(transaction.amount),
+            total_amount: transactionAmount,
+            currency: transactionCurrency,
             paid_by: paidBy,
             receipt_image_url: documentFile?.uri || null,
             category: 'general',
@@ -371,17 +385,17 @@ export default function ScanReceiptScreen() {
 
         if (expenseError) throw expenseError;
 
-        if (teamMembers && teamMembers.length > 0) {
-          const splitAmount = parseFloat(transaction.amount) / teamMembers.length;
-          const splits = teamMembers.map(member => ({
+        const { error: splitError } = await supabase
+          .from('expense_splits')
+          .insert({
             expense_id: expense.id,
-            user_id: member.user_id,
-            amount: splitAmount,
-            is_settled: member.user_id === paidBy,
-          }));
+            user_id: paidBy,
+            amount: transactionAmount,
+            currency: transactionCurrency,
+            is_settled: true,
+          });
 
-          await supabase.from('expense_splits').insert(splits);
-        }
+        if (splitError) throw splitError;
       }
 
       Alert.alert('Éxito', `${expensesToCreate.length} gastos agregados correctamente`, [
@@ -402,12 +416,15 @@ export default function ScanReceiptScreen() {
     }
 
     try {
+      const totalAmount = parseFloat(amount);
+
       const { data: expense, error: expenseError } = await supabase
         .from('expenses')
         .insert({
           team_id: selectedTeam,
           description,
-          total_amount: parseFloat(amount),
+          total_amount: totalAmount,
+          currency,
           paid_by: user.id,
           receipt_image_url: capturedImage,
           category,
@@ -425,11 +442,12 @@ export default function ScanReceiptScreen() {
         .eq('team_id', selectedTeam);
 
       if (teamMembers && teamMembers.length > 0) {
-        const splitAmount = parseFloat(amount) / teamMembers.length;
+        const splitAmount = totalAmount / teamMembers.length;
         const splits = teamMembers.map(member => ({
           expense_id: expense.id,
           user_id: member.user_id,
           amount: splitAmount,
+          currency,
           is_settled: member.user_id === user.id,
         }));
 
@@ -706,7 +724,11 @@ export default function ScanReceiptScreen() {
                               <Text style={styles.transactionDescription}>{transaction.description}</Text>
                               <Text style={styles.transactionDate}>{transaction.date}</Text>
                             </View>
-                            <Text style={styles.transactionAmount}>${transaction.amount}</Text>
+                            <Text style={styles.transactionAmount}>
+                              {transaction.currency && transaction.currency !== 'USD'
+                                ? `${transaction.currency} ${transaction.amount}`
+                                : `$${transaction.amount}`}
+                            </Text>
                           </TouchableOpacity>
                         );
                       })}
@@ -761,7 +783,9 @@ export default function ScanReceiptScreen() {
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Monto *</Text>
                 <View style={styles.amountInputWrapper}>
-                  <Text style={styles.currencySymbol}>$</Text>
+                  <Text style={styles.currencySymbol}>
+                    {CURRENCIES.find(c => c.value === currency)?.symbol || '$'}
+                  </Text>
                   <TextInput
                     style={[styles.formInput, styles.amountInput]}
                     value={amount}
@@ -771,6 +795,29 @@ export default function ScanReceiptScreen() {
                     keyboardType="decimal-pad"
                   />
                 </View>
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Moneda</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+                  {CURRENCIES.map((curr) => (
+                    <TouchableOpacity
+                      key={curr.value}
+                      style={[
+                        styles.categoryChip,
+                        currency === curr.value && styles.categoryChipActive
+                      ]}
+                      onPress={() => setCurrency(curr.value)}
+                    >
+                      <Text style={[
+                        styles.categoryChipText,
+                        currency === curr.value && styles.categoryChipTextActive
+                      ]}>
+                        {curr.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               </View>
 
               <View style={styles.formGroup}>
