@@ -264,13 +264,30 @@ export default function ScanReceiptScreen() {
       }
 
       const data = await response.json();
+      console.log('Edge function response:', data);
+
+      // Check if there's an error from the edge function
+      if (data.error) {
+        console.error('Edge function error:', data.error);
+        Alert.alert(
+          'Error al procesar',
+          `${data.error}\n\nRevisa los logs de la función en Supabase Dashboard.`,
+          [{ text: 'OK' }]
+        );
+        setAmount('');
+        setDescription(data.description || 'Gasto procesado');
+        setShowExpenseForm(true);
+        return;
+      }
 
       // Check if it's a credit card statement with multiple cardholders
       if (data.type === 'statement' && data.expenses) {
+        console.log('Statement detected with', data.expenses.length, 'cardholders');
         setStatementData(data.expenses);
         setShowExpenseForm(true);
       } else {
         // Single receipt
+        console.log('Single receipt detected. Amount:', data.amount, 'Description:', data.description);
         setAmount(data.amount ? data.amount.toString() : '');
         setDescription(data.description || 'Gasto procesado');
         setShowExpenseForm(true);
@@ -278,7 +295,7 @@ export default function ScanReceiptScreen() {
         if (!data.amount || data.amount === 0) {
           Alert.alert(
             'Procesamiento Manual',
-            'No se pudo extraer el monto automáticamente. Por favor ingresa el monto manualmente.',
+            'No se pudo extraer el monto automáticamente. Por favor ingresa el monto manualmente.\n\nRevisa los logs en Supabase para más detalles.',
             [{ text: 'OK' }]
           );
         }
@@ -287,7 +304,7 @@ export default function ScanReceiptScreen() {
       console.error('Error processing receipt:', error);
       Alert.alert(
         'Error',
-        `No se pudo procesar el archivo: ${error.message || 'Error desconocido'}. Por favor ingresa el monto manualmente.`
+        `No se pudo procesar el archivo: ${error.message || 'Error desconocido'}.\n\nRevisa los logs en Supabase Dashboard.`
       );
       setAmount('');
       setDescription('Gasto procesado');

@@ -17,7 +17,12 @@ Deno.serve(async (req: Request) => {
   try {
     const { image, fileType } = await req.json();
 
+    console.log('=== Processing Receipt Request ===');
+    console.log('File type received:', fileType);
+    console.log('Image data length:', image ? image.length : 0);
+
     if (!image) {
+      console.error('No image data received');
       return new Response(
         JSON.stringify({ error: 'File data is required' }),
         {
@@ -29,6 +34,7 @@ Deno.serve(async (req: Request) => {
 
     // Check if it's a PDF document
     const isPDF = fileType && fileType.includes('pdf');
+    console.log('Is PDF:', isPDF);
 
     // DOC files are not supported
     if (fileType && fileType.includes('doc') && !isPDF) {
@@ -64,7 +70,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    console.log('Calling OpenAI API for document processing...');
+    console.log('=== Calling OpenAI API ===');
+    console.log('Document type:', isPDF ? 'PDF' : 'Image');
 
     // Determine the prompt based on whether it's a PDF or image
     const systemPrompt = isPDF
@@ -87,6 +94,12 @@ Deno.serve(async (req: Request) => {
     const userPrompt = isPDF
       ? 'Analyze this document. If it\'s a credit card statement with multiple cardholders, extract all cardholders and their transactions. If it\'s a single receipt, extract the amount and description. Return ONLY JSON.'
       : 'Extract the total amount and description from this receipt. Return ONLY JSON format: {"type": "receipt", "amount": number, "description": string}. Do not include any other text.';
+
+    const imageUrl = isPDF
+      ? `data:application/pdf;base64,${image}`
+      : `data:image/jpeg;base64,${image}`;
+
+    console.log('Image URL format:', imageUrl.substring(0, 50) + '...');
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -111,9 +124,7 @@ Deno.serve(async (req: Request) => {
               {
                 type: 'image_url',
                 image_url: {
-                  url: isPDF
-                    ? `data:application/pdf;base64,${image}`
-                    : `data:image/jpeg;base64,${image}`,
+                  url: imageUrl,
                 },
               },
             ],
@@ -124,33 +135,52 @@ Deno.serve(async (req: Request) => {
       }),
     });
 
+    console.log('OpenAI response status:', response.status);
+
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('OpenAI API error:', errorText);
+      console.error('=== OpenAI API Error ===');
+      console.error('Status:', response.status);
+      console.error('Error text:', errorText);
       throw new Error(`OpenAI API request failed: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('OpenAI response:', JSON.stringify(data));
+    console.log('=== OpenAI Response ===');
+    console.log('Response data:', JSON.stringify(data, null, 2));
 
     const content = data.choices[0]?.message?.content;
 
     if (!content) {
+      console.error('No content in OpenAI response. Full data:', JSON.stringify(data));
       throw new Error('No content in OpenAI response');
     }
+
+    console.log('=== Parsing Response ===');
+    console.log('Raw content:', content);
 
     let result;
     try {
       const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      console.log('Cleaned content:', cleanContent);
       result = JSON.parse(cleanContent);
+      console.log('Parsed result:', JSON.stringify(result, null, 2));
     } catch (parseError) {
+      console.error('=== Parse Error ===');
       console.error('Failed to parse OpenAI response:', content);
       const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown parse error';
+      console.error('Error message:', errorMessage);
       throw new Error(`Failed to parse OpenAI response: ${errorMessage}`);
     }
 
     // Handle different response types
+    console.log('=== Processing Result ===');
+    console.log('Result type:', result.type);
+
     if (result.type === 'statement' && result.expenses) {
+      console.log('Detected credit card statement with', result.expenses.length, 'cardholders');
+      console.log('Expenses:', JSON.stringify(result.expenses, null, 2));
+
       // Credit card statement with multiple cardholders
       return new Response(
         JSON.stringify({
@@ -163,6 +193,10 @@ Deno.serve(async (req: Request) => {
         }
       );
     } else {
+      console.log('Detected single receipt');
+      console.log('Amount:', result.amount);
+      console.log('Description:', result.description);
+
       // Single receipt
       return new Response(
         JSON.stringify({
@@ -177,7 +211,10 @@ Deno.serve(async (req: Request) => {
       );
     }
   } catch (error) {
-    console.error('Error processing receipt:', error);
+    console.error('=== Error Caught ===');
+    console.error('Error:', error);
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+
     const errorMessage = error instanceof Error ? error.message : 'Error desconocido al procesar el recibo';
     return new Response(
       JSON.stringify({
