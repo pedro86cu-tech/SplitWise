@@ -49,9 +49,7 @@ export default function ScanReceiptScreen() {
     setSelectedTeam(teamId);
     setManualEntry(manual);
     setTeamSelected(true);
-    if (manual) {
-      setShowExpenseForm(true);
-    } else {
+    if (!manual) {
       setShowCamera(true);
     }
   };
