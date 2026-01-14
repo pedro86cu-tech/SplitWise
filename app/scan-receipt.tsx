@@ -53,17 +53,12 @@ export default function ScanReceiptScreen() {
         return;
       }
 
-      const { data: teamMembers } = await supabase
+      const { data: teamMembers, error } = await supabase
         .from('team_members')
-        .select(`
-          user_id,
-          profiles!inner(
-            id,
-            display_name,
-            email
-          )
-        `)
+        .select('user_id, profiles(id, full_name, email)')
         .eq('team_id', selectedTeam);
+
+      console.log('📋 Team members loaded:', teamMembers, 'Error:', error);
 
       if (!teamMembers || teamMembers.length === 0) {
         setCardholderMappings(new Map());
@@ -382,15 +377,15 @@ export default function ScanReceiptScreen() {
     let bestScore = 0;
 
     for (const member of teamMembers) {
-      const displayName = member.profiles?.display_name || '';
+      const fullName = member.profiles?.full_name || '';
       const email = member.profiles?.email || '';
-      const normalizedName = normalizeText(displayName);
+      const normalizedName = normalizeText(fullName);
       const normalizedEmail = normalizeText(email);
       const nameParts = normalizedName.split(/\s+/).filter(p => p.length >= 2);
 
       let score = 0;
 
-      console.log('   👤 Checking:', displayName);
+      console.log('   👤 Checking:', fullName);
       console.log('      Normalized:', normalizedName);
       console.log('      Parts:', nameParts);
 
@@ -428,7 +423,7 @@ export default function ScanReceiptScreen() {
       }
     }
 
-    console.log('   🎯 Best match:', bestMatch?.profiles?.display_name || 'NONE', 'Score:', bestScore);
+    console.log('   🎯 Best match:', bestMatch?.profiles?.full_name || 'NONE', 'Score:', bestScore);
     const isGoodMatch = bestScore >= 10;
     console.log('   Result:', isGoodMatch ? '✅ MATCHED' : '❌ NO MATCH');
 
@@ -444,14 +439,7 @@ export default function ScanReceiptScreen() {
     try {
       const { data: teamMembers, error: teamMembersError } = await supabase
         .from('team_members')
-        .select(`
-          user_id,
-          profiles!inner(
-            id,
-            display_name,
-            email
-          )
-        `)
+        .select('user_id, profiles(id, full_name, email)')
         .eq('team_id', selectedTeam);
 
       console.log('Team members query result:', { teamMembers, error: teamMembersError });
@@ -485,7 +473,7 @@ export default function ScanReceiptScreen() {
             transaction,
             cardholderName,
             paidBy: matchedMember.user_id,
-            matchedTo: matchedMember.profiles?.display_name || matchedMember.profiles?.email
+            matchedTo: matchedMember.profiles?.full_name || matchedMember.profiles?.email
           });
         } else {
           if (!unmatchedCardholders.includes(cardholderName)) {
@@ -504,7 +492,7 @@ export default function ScanReceiptScreen() {
         const proceed = await new Promise<boolean>((resolve) => {
           Alert.alert(
             'Usuarios No Encontrados',
-            `No se encontraron matches para:\n\n${unmatchedCardholders.join('\n')}\n\nEstos gastos se asignarán a ti. Los miembros del team son:\n\n${teamMembers.map(m => `• ${m.profiles?.display_name || m.profiles?.email}`).join('\n')}\n\n¿Continuar?`,
+            `No se encontraron matches para:\n\n${unmatchedCardholders.join('\n')}\n\nEstos gastos se asignarán a ti. Los miembros del team son:\n\n${teamMembers.map(m => `• ${m.profiles?.full_name || m.profiles?.email}`).join('\n')}\n\n¿Continuar?`,
             [
               { text: 'Cancelar', onPress: () => resolve(false), style: 'cancel' },
               { text: 'Continuar', onPress: () => resolve(true) }
@@ -843,7 +831,7 @@ export default function ScanReceiptScreen() {
                                 </Text>
                                 {matchedMember ? (
                                   <Text style={[styles.cardholderMatch, { color: '#10b981' }]}>
-                                    ✓ Se asignará a: {matchedMember.profiles?.display_name || matchedMember.profiles?.email}
+                                    ✓ Se asignará a: {matchedMember.profiles?.full_name || matchedMember.profiles?.email}
                                   </Text>
                                 ) : (
                                   <Text style={[styles.cardholderMatch, { color: '#f59e0b' }]}>
