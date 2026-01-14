@@ -7,6 +7,7 @@ export type DebtDetail = {
   userId: string;
   userName: string;
   amount: number;
+  currency: string;
   isSettled: boolean;
   expenseId: string;
   expenseDescription: string;
@@ -42,6 +43,7 @@ export function useTeamDebtDetails(teamId: string) {
         .select(`
           id,
           amount,
+          currency,
           is_settled,
           user_id,
           expense_id,
@@ -68,6 +70,7 @@ export function useTeamDebtDetails(teamId: string) {
         .select(`
           id,
           amount,
+          currency,
           is_settled,
           user_id,
           expense_id,
@@ -93,6 +96,7 @@ export function useTeamDebtDetails(teamId: string) {
         userId: split.user_id,
         userName: split.profiles?.full_name || 'Usuario',
         amount: Number(split.amount),
+        currency: split.currency || 'USD',
         isSettled: split.is_settled,
         expenseId: split.expenses.id,
         expenseDescription: split.expenses.description,
@@ -105,6 +109,7 @@ export function useTeamDebtDetails(teamId: string) {
         userId: split.user_id,
         userName: user.email || 'Tú',
         amount: Number(split.amount),
+        currency: split.currency || 'USD',
         isSettled: split.is_settled,
         expenseId: split.expenses.id,
         expenseDescription: split.expenses.description,

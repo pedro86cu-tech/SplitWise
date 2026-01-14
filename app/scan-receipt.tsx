@@ -454,7 +454,7 @@ export default function ScanReceiptScreen() {
             user_id: paidBy,
             amount: transactionAmount,
             currency: transactionCurrency,
-            is_settled: true,
+            is_settled: false,
           });
 
         if (splitError) throw splitError;

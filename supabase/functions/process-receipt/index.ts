@@ -60,11 +60,9 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Check if it's a PDF document
     const isPDF = fileType && fileType.includes('pdf');
     console.log('Is PDF:', isPDF);
 
-    // DOC files are not supported
     if (fileType && fileType.includes('doc')) {
       console.log('DOC file detected, returning default values');
       return new Response(
@@ -101,7 +99,6 @@ Deno.serve(async (req: Request) => {
     console.log('=== Calling OpenAI API ===');
     console.log('Document type:', isPDF ? 'PDF (text extraction)' : 'Image');
 
-    // System prompt that handles both statements and single receipts
     const systemPrompt = `You are a credit card statement and receipt analyzer.
          First, determine if this is a credit card statement with multiple cardholders or a single receipt.
 
@@ -122,7 +119,6 @@ Deno.serve(async (req: Request) => {
     let messageContent;
 
     if (isPDF) {
-      // Extract text from PDF and send as text
       console.log('Extracting text from PDF...');
       const pdfText = await extractTextFromPdf(image);
       console.log('PDF text extracted, length:', pdfText.length);
@@ -136,7 +132,6 @@ Deno.serve(async (req: Request) => {
         },
       ];
     } else {
-      // Send image directly
       const userPrompt = 'Analyze this image. If it\'s a credit card statement with multiple cardholders, extract all cardholders and their transactions. If it\'s a single receipt, extract the amount and description. Return ONLY JSON.';
 
       const imageUrl = `data:image/jpeg;base64,${image}`;
@@ -205,19 +200,52 @@ Deno.serve(async (req: Request) => {
 
     let result;
     try {
-      const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      let cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+      cleanContent = cleanContent
+        .replace(/,\s*([\]}])/g, '$1')
+        .replace(/\n/g, ' ')
+        .replace(/\r/g, '')
+        .replace(/\t/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/,\s*,/g, ',');
+
       console.log('Cleaned content:', cleanContent);
-      result = JSON.parse(cleanContent);
+
+      try {
+        result = JSON.parse(cleanContent);
+      } catch (firstError) {
+        const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          console.log('Attempting to extract JSON from match:', jsonMatch[0]);
+          result = JSON.parse(jsonMatch[0]);
+        } else {
+          throw firstError;
+        }
+      }
+
       console.log('Parsed result:', JSON.stringify(result, null, 2));
     } catch (parseError) {
       console.error('=== Parse Error ===');
       console.error('Failed to parse OpenAI response:', content);
       const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown parse error';
       console.error('Error message:', errorMessage);
-      throw new Error(`Failed to parse OpenAI response: ${errorMessage}`);
+
+      return new Response(
+        JSON.stringify({
+          type: 'receipt',
+          amount: 0,
+          description: 'Error al procesar - Ingresa datos manualmente',
+          currency: 'USD',
+          error: `Error de formato en la respuesta del AI. Ingresa los datos manualmente.`,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
     }
 
-    // Handle different response types
     console.log('=== Processing Result ===');
     console.log('Result type:', result.type);
 
@@ -225,7 +253,6 @@ Deno.serve(async (req: Request) => {
       console.log('Detected credit card statement with', result.expenses.length, 'cardholders');
       console.log('Expenses:', JSON.stringify(result.expenses, null, 2));
 
-      // Credit card statement with multiple cardholders
       return new Response(
         JSON.stringify({
           type: 'statement',
@@ -242,7 +269,6 @@ Deno.serve(async (req: Request) => {
       console.log('Description:', result.description);
       console.log('Currency:', result.currency);
 
-      // Single receipt
       return new Response(
         JSON.stringify({
           type: 'receipt',

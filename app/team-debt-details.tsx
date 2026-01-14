@@ -164,28 +164,49 @@ export default function TeamDebtDetailsScreen() {
     });
   };
 
-  const groupByUser = (debts: typeof details.owedToMe) => {
-    const grouped = new Map<string, { userName: string; debts: typeof details.owedToMe; total: number; unpaidTotal: number }>();
+  const groupByUserAndCurrency = (debts: typeof details.owedToMe) => {
+    const grouped = new Map<string, {
+      userName: string;
+      byCurrency: Map<string, {
+        currency: string;
+        debts: typeof details.owedToMe;
+        total: number;
+        unpaidTotal: number;
+      }>;
+    }>();
 
     debts.forEach((debt) => {
-      const existing = grouped.get(debt.userId);
-      if (existing) {
-        existing.debts.push(debt);
-        existing.total += debt.amount;
-        if (!debt.isSettled) {
-          existing.unpaidTotal += debt.amount;
-        }
-      } else {
-        grouped.set(debt.userId, {
+      let userGroup = grouped.get(debt.userId);
+      if (!userGroup) {
+        userGroup = {
           userName: debt.userName,
-          debts: [debt],
-          total: debt.amount,
-          unpaidTotal: debt.isSettled ? 0 : debt.amount,
-        });
+          byCurrency: new Map(),
+        };
+        grouped.set(debt.userId, userGroup);
+      }
+
+      let currencyGroup = userGroup.byCurrency.get(debt.currency);
+      if (!currencyGroup) {
+        currencyGroup = {
+          currency: debt.currency,
+          debts: [],
+          total: 0,
+          unpaidTotal: 0,
+        };
+        userGroup.byCurrency.set(debt.currency, currencyGroup);
+      }
+
+      currencyGroup.debts.push(debt);
+      currencyGroup.total += debt.amount;
+      if (!debt.isSettled) {
+        currencyGroup.unpaidTotal += debt.amount;
       }
     });
 
-    return Array.from(grouped.values());
+    return Array.from(grouped.values()).map(user => ({
+      userName: user.userName,
+      currencies: Array.from(user.byCurrency.values()),
+    }));
   };
 
   if (loading) {
@@ -205,8 +226,8 @@ export default function TeamDebtDetailsScreen() {
     );
   }
 
-  const owedToMeGrouped = groupByUser(details.owedToMe);
-  const iOweGrouped = groupByUser(details.iOwe);
+  const owedToMeGrouped = groupByUserAndCurrency(details.owedToMe);
+  const iOweGrouped = groupByUserAndCurrency(details.iOwe);
 
   return (
     <View style={styles.container}>
@@ -231,20 +252,27 @@ export default function TeamDebtDetailsScreen() {
                     </View>
                     <View>
                       <Text style={styles.userName}>{group.userName}</Text>
-                      <Text style={styles.userTotal}>
-                        Pendiente: ${group.unpaidTotal.toFixed(2)}
-                      </Text>
-                      {group.total !== group.unpaidTotal && (
-                        <Text style={styles.userTotalPaid}>
-                          Pagado: ${(group.total - group.unpaidTotal).toFixed(2)}
-                        </Text>
-                      )}
+                      {group.currencies.map((currencyGroup) => (
+                        <View key={currencyGroup.currency}>
+                          <Text style={styles.userTotal}>
+                            {currencyGroup.currency}: {currencyGroup.unpaidTotal.toFixed(2)} pendiente
+                          </Text>
+                          {currencyGroup.total !== currencyGroup.unpaidTotal && (
+                            <Text style={styles.userTotalPaid}>
+                              {currencyGroup.currency}: {(currencyGroup.total - currencyGroup.unpaidTotal).toFixed(2)} pagado
+                            </Text>
+                          )}
+                        </View>
+                      ))}
                     </View>
                   </View>
                 </View>
 
-                <View style={styles.debtsList}>
-                  {group.debts.map((debt) => (
+                {group.currencies.map((currencyGroup) => (
+                  <View key={currencyGroup.currency} style={styles.currencySection}>
+                    <Text style={styles.currencyLabel}>{currencyGroup.currency}</Text>
+                    <View style={styles.debtsList}>
+                      {currencyGroup.debts.map((debt) => (
                     <View key={debt.splitId} style={[styles.debtItem, debt.isSettled && styles.debtItemSettled]}>
                       <View style={styles.debtInfo}>
                         <View style={[styles.receiptIcon, debt.isSettled && styles.receiptIconSettled]}>
@@ -293,8 +321,10 @@ export default function TeamDebtDetailsScreen() {
                         )}
                       </View>
                     </View>
-                  ))}
-                </View>
+                      ))}
+                    </View>
+                  </View>
+                ))}
               </View>
             ))}
           </View>
@@ -304,9 +334,14 @@ export default function TeamDebtDetailsScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Debes</Text>
             {iOweGrouped.map((group) => (
-              <View key={group.debts[0]?.expenseId} style={styles.userCard}>
-                <View style={styles.debtsList}>
-                  {group.debts.map((debt) => (
+              <View key={group.userName} style={styles.userCard}>
+                {group.currencies.map((currencyGroup) => (
+                  <View key={currencyGroup.currency} style={styles.currencySection}>
+                    <Text style={styles.currencyLabel}>
+                      {currencyGroup.currency}: {currencyGroup.unpaidTotal.toFixed(2)} pendiente
+                    </Text>
+                    <View style={styles.debtsList}>
+                      {currencyGroup.debts.map((debt) => (
                     <View key={debt.splitId} style={[styles.debtItem, debt.isSettled && styles.debtItemSettled]}>
                       <View style={styles.debtInfo}>
                         <View style={[styles.receiptIcon, debt.isSettled && styles.receiptIconSettled]}>
@@ -377,21 +412,10 @@ export default function TeamDebtDetailsScreen() {
                         )}
                       </View>
                     </View>
-                  ))}
-                  <View style={styles.totalRow}>
-                    <View>
-                      <Text style={styles.totalLabel}>Pendiente:</Text>
-                      {group.total !== group.unpaidTotal && (
-                        <Text style={styles.totalLabelPaid}>
-                          Pagado: ${(group.total - group.unpaidTotal).toFixed(2)}
-                        </Text>
-                      )}
+                      ))}
                     </View>
-                    <Text style={[styles.totalAmount, styles.negativeAmount]}>
-                      ${group.unpaidTotal.toFixed(2)}
-                    </Text>
                   </View>
-                </View>
+                ))}
               </View>
             ))}
           </View>
@@ -650,6 +674,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#64748b',
     marginTop: 4,
+  },
+  currencySection: {
+    marginTop: 16,
+  },
+  currencyLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#3b82f6',
+    marginBottom: 8,
+    textTransform: 'uppercase',
   },
   debtsList: {
     gap: 12,

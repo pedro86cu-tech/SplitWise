@@ -1,9 +1,10 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, Modal, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, User, UserPlus, UserMinus, Crown, History } from 'lucide-react-native';
+import { ArrowLeft, User, UserPlus, UserMinus, Crown, History, Trash2 } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTeamDetails } from '@/hooks/useTeamDetails';
 import { useState } from 'react';
+import { supabase } from '@/lib/supabase';
 
 export default function TeamDetailsScreen() {
   const router = useRouter();
@@ -60,6 +61,39 @@ export default function TeamDetailsScreen() {
     }
   };
 
+  const handleDeleteTeam = () => {
+    Alert.alert(
+      'Eliminar equipo',
+      '¿Estás seguro que quieres eliminar este equipo? Se eliminarán todos los gastos y splits asociados. Esta acción no se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('teams')
+                .delete()
+                .eq('id', teamId);
+
+              if (error) throw error;
+
+              Alert.alert('Equipo eliminado', 'El equipo ha sido eliminado correctamente', [
+                {
+                  text: 'OK',
+                  onPress: () => router.replace('/(tabs)/teams'),
+                },
+              ]);
+            } catch (error: any) {
+              Alert.alert('Error', 'No se pudo eliminar el equipo: ' + error.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading || !team) {
     return (
       <View style={styles.container}>
@@ -93,6 +127,9 @@ export default function TeamDetailsScreen() {
             </Text>
           </View>
         </View>
+        <TouchableOpacity style={styles.deleteButton} onPress={handleDeleteTeam}>
+          <Trash2 size={22} color="#ef4444" />
+        </TouchableOpacity>
       </LinearGradient>
 
       <ScrollView style={styles.content}>
@@ -237,12 +274,25 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 24,
     paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
   backButton: {
     marginBottom: 16,
+    marginRight: 12,
   },
   headerContent: {
     gap: 8,
+    flex: 1,
+  },
+  deleteButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 12,
   },
   headerTitle: {
     fontSize: 28,

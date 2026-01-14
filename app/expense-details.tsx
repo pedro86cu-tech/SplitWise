@@ -1,9 +1,10 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Image, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Image, Linking, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Receipt, User, CircleCheck as CheckCircle, Circle as XCircle, FileText, Calendar, DollarSign, Tag, X, Download } from 'lucide-react-native';
+import { ArrowLeft, Receipt, User, CircleCheck as CheckCircle, Circle as XCircle, FileText, Calendar, DollarSign, Tag, X, Download, Trash2 } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useExpensePaymentDetails } from '@/hooks/useExpensePaymentDetails';
 import { useState } from 'react';
+import { supabase } from '@/lib/supabase';
 
 export default function ExpenseDetailsScreen() {
   const router = useRouter();
@@ -55,6 +56,39 @@ export default function ExpenseDetailsScreen() {
     Linking.openURL(url);
   };
 
+  const handleDeleteExpense = () => {
+    Alert.alert(
+      'Eliminar gasto',
+      '¿Estás seguro que quieres eliminar este gasto? Esta acción no se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('expenses')
+                .delete()
+                .eq('id', expenseId);
+
+              if (error) throw error;
+
+              Alert.alert('Gasto eliminado', 'El gasto ha sido eliminado correctamente', [
+                {
+                  text: 'OK',
+                  onPress: () => router.back(),
+                },
+              ]);
+            } catch (error: any) {
+              Alert.alert('Error', 'No se pudo eliminar el gasto: ' + error.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -98,6 +132,9 @@ export default function ExpenseDetailsScreen() {
           <ArrowLeft size={24} color="#ffffff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Detalles del Gasto</Text>
+        <TouchableOpacity style={styles.deleteButton} onPress={handleDeleteExpense}>
+          <Trash2 size={22} color="#ef4444" />
+        </TouchableOpacity>
       </LinearGradient>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -325,6 +362,15 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     color: '#ffffff',
+    flex: 1,
+  },
+  deleteButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   content: {
     flex: 1,
