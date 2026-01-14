@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal, TextInput, ScrollView, KeyboardAvoidingView, Platform, Image, ActivityIndicator } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
-import { X, Camera as CameraIcon, Check, Users, Edit3, MapPin, Calendar, Tag } from 'lucide-react-native';
+import { X, Camera as CameraIcon, Check, Users, Edit3, MapPin, Calendar, Tag, Upload, ImageIcon } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/hooks/useTeams';
 import { supabase } from '@/lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function ScanReceiptScreen() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -172,6 +173,51 @@ export default function ScanReceiptScreen() {
     }
   };
 
+  const pickImageFromGallery = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permissionResult.granted) {
+      Alert.alert('Permiso requerido', 'Necesitamos acceso a tu galería para seleccionar el recibo');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setCapturedImage(result.assets[0].uri);
+      if (result.assets[0].base64) {
+        processReceipt(result.assets[0].base64);
+      }
+    }
+  };
+
+  const takePhotoForManual = async () => {
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+
+    if (!permissionResult.granted) {
+      Alert.alert('Permiso requerido', 'Necesitamos acceso a tu cámara para tomar la foto');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      quality: 0.8,
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setCapturedImage(result.assets[0].uri);
+      if (result.assets[0].base64) {
+        processReceipt(result.assets[0].base64);
+      }
+    }
+  };
+
   const processReceipt = async (base64Image: string | undefined) => {
     if (!base64Image) {
       Alert.alert('Error', 'No se pudo capturar la imagen');
@@ -280,12 +326,110 @@ export default function ScanReceiptScreen() {
 
   return (
     <View style={styles.container}>
-      {manualEntry ? (
+      {manualEntry && !capturedImage && !processing && !showExpenseForm ? (
         <LinearGradient
           colors={['#0f172a', '#1e293b']}
-          style={{ flex: 1 }}
-        />
-      ) : !capturedImage ? (
+          style={styles.manualEntryContainer}
+        >
+          <View style={styles.manualHeader}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => {
+                setSelectedTeam(null);
+                setTeamSelected(false);
+                setManualEntry(false);
+              }}
+            >
+              <X size={28} color="#ffffff" />
+            </TouchableOpacity>
+            <Text style={styles.manualTitle}>Crear Gasto</Text>
+            <View style={{ width: 28 }} />
+          </View>
+
+          {selectedTeamData && (
+            <View style={styles.selectedTeamBadgeManual}>
+              <Users size={20} color="#10b981" />
+              <Text style={styles.selectedTeamTextManual}>{selectedTeamData.name}</Text>
+            </View>
+          )}
+
+          <Text style={styles.manualSubtitle}>¿Cómo quieres agregar el gasto?</Text>
+
+          <View style={styles.manualOptions}>
+            <TouchableOpacity
+              style={styles.manualOptionCard}
+              onPress={pickImageFromGallery}
+            >
+              <LinearGradient
+                colors={['#3b82f6', '#2563eb']}
+                style={styles.manualOptionGradient}
+              >
+                <View style={styles.manualOptionIcon}>
+                  <ImageIcon size={48} color="#ffffff" strokeWidth={1.5} />
+                </View>
+                <Text style={styles.manualOptionTitle}>Desde Galería</Text>
+                <Text style={styles.manualOptionSubtitle}>
+                  Cargar recibo existente y procesar con IA
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.manualOptionCard}
+              onPress={takePhotoForManual}
+            >
+              <LinearGradient
+                colors={['#10b981', '#059669']}
+                style={styles.manualOptionGradient}
+              >
+                <View style={styles.manualOptionIcon}>
+                  <CameraIcon size={48} color="#ffffff" strokeWidth={1.5} />
+                </View>
+                <Text style={styles.manualOptionTitle}>Tomar Foto</Text>
+                <Text style={styles.manualOptionSubtitle}>
+                  Fotografiar recibo y procesar con IA
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.manualOptionCard}
+              onPress={() => setShowExpenseForm(true)}
+            >
+              <LinearGradient
+                colors={['#6366f1', '#4f46e5']}
+                style={styles.manualOptionGradient}
+              >
+                <View style={styles.manualOptionIcon}>
+                  <Edit3 size={48} color="#ffffff" strokeWidth={1.5} />
+                </View>
+                <Text style={styles.manualOptionTitle}>Entrada Manual</Text>
+                <Text style={styles.manualOptionSubtitle}>
+                  Ingresar datos sin imagen
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
+      ) : manualEntry && processing ? (
+        <View style={styles.processingContainer}>
+          <LinearGradient
+            colors={['#0f172a', '#1e293b']}
+            style={styles.processingContent}
+          >
+            <ActivityIndicator size="large" color="#10b981" />
+            <Text style={styles.processingText}>Procesando recibo...</Text>
+            <Text style={styles.processingSubtext}>Extrayendo información con IA</Text>
+            {capturedImage && (
+              <Image
+                source={{ uri: capturedImage }}
+                style={styles.processingImage}
+                resizeMode="contain"
+              />
+            )}
+          </LinearGradient>
+        </View>
+      ) : !manualEntry && !capturedImage ? (
         <>
           <CameraView ref={cameraRef} style={styles.camera} facing="back">
             <View style={styles.cameraOverlay}>
@@ -460,12 +604,23 @@ export default function ScanReceiptScreen() {
                 </View>
               )}
 
-              {capturedImage && !manualEntry && (
+              {capturedImage && (
                 <View style={styles.formGroup}>
-                  <Text style={styles.formLabel}>Recibo escaneado</Text>
-                  <View style={styles.receiptBadge}>
-                    <CameraIcon size={16} color="#10b981" />
-                    <Text style={styles.receiptBadgeText}>Imagen guardada</Text>
+                  <Text style={styles.formLabel}>
+                    {manualEntry ? 'Recibo cargado' : 'Recibo escaneado'}
+                  </Text>
+                  <View style={styles.receiptPreviewContainer}>
+                    <Image
+                      source={{ uri: capturedImage }}
+                      style={styles.receiptPreview}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.receiptBadge}>
+                      <CameraIcon size={16} color="#10b981" />
+                      <Text style={styles.receiptBadgeText}>
+                        {manualEntry ? 'Procesado con IA' : 'Imagen guardada'}
+                      </Text>
+                    </View>
                   </View>
                 </View>
               )}
@@ -889,6 +1044,17 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     paddingLeft: 12,
   },
+  receiptPreviewContainer: {
+    gap: 12,
+  },
+  receiptPreview: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
   receiptBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -903,5 +1069,87 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#10b981',
     fontWeight: '600',
+  },
+  manualEntryContainer: {
+    flex: 1,
+    paddingTop: 60,
+  },
+  manualHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    marginBottom: 16,
+  },
+  manualTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  manualSubtitle: {
+    fontSize: 16,
+    color: '#94a3b8',
+    textAlign: 'center',
+    paddingHorizontal: 32,
+    marginBottom: 32,
+    marginTop: 16,
+  },
+  selectedTeamBadgeManual: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    marginHorizontal: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  selectedTeamTextManual: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  manualOptions: {
+    flex: 1,
+    paddingHorizontal: 24,
+    gap: 16,
+  },
+  manualOptionCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  manualOptionGradient: {
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  manualOptionIcon: {
+    marginBottom: 16,
+  },
+  manualOptionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  manualOptionSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.85)',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  processingImage: {
+    width: 200,
+    height: 200,
+    marginTop: 24,
+    borderRadius: 12,
   },
 });
