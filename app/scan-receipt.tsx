@@ -30,6 +30,7 @@ export default function ScanReceiptScreen() {
   const [statementData, setStatementData] = useState<any>(null);
   const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
   const [cardholderMappings, setCardholderMappings] = useState<Map<string, any>>(new Map());
+  const [creatingExpense, setCreatingExpense] = useState(false);
   const cameraRef = useRef<any>(null);
   const router = useRouter();
   const { user } = useAuth();
@@ -436,6 +437,7 @@ export default function ScanReceiptScreen() {
       return;
     }
 
+    setCreatingExpense(true);
     try {
       const { data: teamMembers, error: teamMembersError } = await supabase
         .from('team_members')
@@ -546,6 +548,8 @@ export default function ScanReceiptScreen() {
       ]);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'No se pudo crear los gastos');
+    } finally {
+      setCreatingExpense(false);
     }
   };
 
@@ -555,6 +559,7 @@ export default function ScanReceiptScreen() {
       return;
     }
 
+    setCreatingExpense(true);
     try {
       const totalAmount = parseFloat(amount);
 
@@ -602,6 +607,8 @@ export default function ScanReceiptScreen() {
       ]);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'No se pudo crear el gasto');
+    } finally {
+      setCreatingExpense(false);
     }
   };
 
@@ -910,18 +917,24 @@ export default function ScanReceiptScreen() {
                   <TouchableOpacity
                     style={[
                       styles.submitButton,
-                      selectedTransactions.size === 0 && styles.submitButtonDisabled
+                      (selectedTransactions.size === 0 || creatingExpense) && styles.submitButtonDisabled
                     ]}
                     onPress={handleCreateStatementExpenses}
-                    disabled={selectedTransactions.size === 0}
+                    disabled={selectedTransactions.size === 0 || creatingExpense}
                   >
                     <LinearGradient
                       colors={['#10b981', '#059669']}
                       style={styles.submitButtonGradient}
                     >
-                      <Check size={20} color="#ffffff" />
+                      {creatingExpense ? (
+                        <ActivityIndicator size="small" color="#ffffff" />
+                      ) : (
+                        <Check size={20} color="#ffffff" />
+                      )}
                       <Text style={styles.submitButtonText}>
-                        {selectedTransactions.size === 0
+                        {creatingExpense
+                          ? 'Creando gastos...'
+                          : selectedTransactions.size === 0
                           ? 'Selecciona transacciones'
                           : `Crear ${selectedTransactions.size} Gasto${selectedTransactions.size !== 1 ? 's' : ''}`}
                       </Text>
@@ -1087,16 +1100,22 @@ export default function ScanReceiptScreen() {
               )}
 
                   <TouchableOpacity
-                    style={[styles.submitButton, !amount && styles.submitButtonDisabled]}
+                    style={[styles.submitButton, (!amount || creatingExpense) && styles.submitButtonDisabled]}
                     onPress={handleCreateExpense}
-                    disabled={!amount}
+                    disabled={!amount || creatingExpense}
                   >
                     <LinearGradient
                       colors={['#10b981', '#059669']}
                       style={styles.submitButtonGradient}
                     >
-                      <Check size={20} color="#ffffff" />
-                      <Text style={styles.submitButtonText}>Crear Gasto</Text>
+                      {creatingExpense ? (
+                        <ActivityIndicator size="small" color="#ffffff" />
+                      ) : (
+                        <Check size={20} color="#ffffff" />
+                      )}
+                      <Text style={styles.submitButtonText}>
+                        {creatingExpense ? 'Creando gasto...' : 'Crear Gasto'}
+                      </Text>
                     </LinearGradient>
                   </TouchableOpacity>
                 </View>

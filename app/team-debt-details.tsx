@@ -21,6 +21,8 @@ export default function TeamDebtDetailsScreen() {
   const [showViewProofModal, setShowViewProofModal] = useState(false);
   const [viewingProofUrl, setViewingProofUrl] = useState<string | null>(null);
   const [viewingProofSplit, setViewingProofSplit] = useState<{ id: string; amount: number; userName: string } | null>(null);
+  const [markingPaid, setMarkingPaid] = useState(false);
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
 
   const handleMarkAsSettled = (splitId: string, userName: string, amount: number) => {
     Alert.alert(
@@ -31,11 +33,16 @@ export default function TeamDebtDetailsScreen() {
         {
           text: 'Sí, pagó',
           onPress: async () => {
-            const success = await markAsSettled(splitId);
-            if (success) {
-              Alert.alert('Pago registrado', 'La deuda ha sido marcada como pagada');
-            } else {
-              Alert.alert('Error', 'No se pudo registrar el pago');
+            setMarkingPaid(true);
+            try {
+              const success = await markAsSettled(splitId);
+              if (success) {
+                Alert.alert('Pago registrado', 'La deuda ha sido marcada como pagada');
+              } else {
+                Alert.alert('Error', 'No se pudo registrar el pago');
+              }
+            } finally {
+              setMarkingPaid(false);
             }
           },
         },
@@ -57,14 +64,19 @@ export default function TeamDebtDetailsScreen() {
   const handleConfirmPaymentFromProof = async () => {
     if (!viewingProofSplit) return;
 
-    const success = await markAsSettled(viewingProofSplit.id);
-    if (success) {
-      Alert.alert('Pago confirmado', 'La deuda ha sido marcada como pagada');
-      setShowViewProofModal(false);
-      setViewingProofUrl(null);
-      setViewingProofSplit(null);
-    } else {
-      Alert.alert('Error', 'No se pudo confirmar el pago');
+    setConfirmingPayment(true);
+    try {
+      const success = await markAsSettled(viewingProofSplit.id);
+      if (success) {
+        Alert.alert('Pago confirmado', 'La deuda ha sido marcada como pagada');
+        setShowViewProofModal(false);
+        setViewingProofUrl(null);
+        setViewingProofSplit(null);
+      } else {
+        Alert.alert('Error', 'No se pudo confirmar el pago');
+      }
+    } finally {
+      setConfirmingPayment(false);
     }
   };
 
@@ -315,8 +327,13 @@ export default function TeamDebtDetailsScreen() {
                           <TouchableOpacity
                             style={styles.markButton}
                             onPress={() => handleMarkAsSettled(debt.splitId, group.userName, debt.amount)}
+                            disabled={markingPaid}
                           >
-                            <CheckCircle size={20} color="#10b981" />
+                            {markingPaid ? (
+                              <ActivityIndicator size="small" color="#10b981" />
+                            ) : (
+                              <CheckCircle size={20} color="#10b981" />
+                            )}
                           </TouchableOpacity>
                         )}
                       </View>
@@ -569,10 +586,17 @@ export default function TeamDebtDetailsScreen() {
               <TouchableOpacity
                 style={[styles.modalButton, styles.submitButton]}
                 onPress={handleConfirmPaymentFromProof}
+                disabled={confirmingPayment}
               >
                 <LinearGradient colors={['#10b981', '#059669']} style={styles.submitButtonGradient}>
-                  <CheckCircle size={20} color="#ffffff" strokeWidth={2.5} />
-                  <Text style={styles.confirmButtonText}>Confirmar pago</Text>
+                  {confirmingPayment ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <CheckCircle size={20} color="#ffffff" strokeWidth={2.5} />
+                      <Text style={styles.confirmButtonText}>Confirmar pago</Text>
+                    </>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
             </View>

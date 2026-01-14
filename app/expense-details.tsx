@@ -1,9 +1,9 @@
+import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Image, Linking, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Receipt, User, CircleCheck as CheckCircle, Circle as XCircle, FileText, Calendar, DollarSign, Tag, X, Download, Trash2 } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useExpensePaymentDetails } from '@/hooks/useExpensePaymentDetails';
-import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export default function ExpenseDetailsScreen() {
@@ -16,6 +16,7 @@ export default function ExpenseDetailsScreen() {
   const [showProofModal, setShowProofModal] = useState(false);
   const [viewingReceiptUrl, setViewingReceiptUrl] = useState<string | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleViewProof = (proofUrl: string) => {
     setViewingProofUrl(proofUrl);
@@ -66,6 +67,7 @@ export default function ExpenseDetailsScreen() {
           text: 'Eliminar',
           style: 'destructive',
           onPress: async () => {
+            setDeleting(true);
             try {
               const { error } = await supabase
                 .from('expenses')
@@ -82,6 +84,8 @@ export default function ExpenseDetailsScreen() {
               ]);
             } catch (error: any) {
               Alert.alert('Error', 'No se pudo eliminar el gasto: ' + error.message);
+            } finally {
+              setDeleting(false);
             }
           },
         },
@@ -132,8 +136,16 @@ export default function ExpenseDetailsScreen() {
           <ArrowLeft size={24} color="#ffffff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Detalles del Gasto</Text>
-        <TouchableOpacity style={styles.deleteButton} onPress={handleDeleteExpense}>
-          <Trash2 size={22} color="#ef4444" />
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={handleDeleteExpense}
+          disabled={deleting}
+        >
+          {deleting ? (
+            <ActivityIndicator size="small" color="#ef4444" />
+          ) : (
+            <Trash2 size={22} color="#ef4444" />
+          )}
         </TouchableOpacity>
       </LinearGradient>
 
