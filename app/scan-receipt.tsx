@@ -29,6 +29,7 @@ export default function ScanReceiptScreen() {
   const [teamSelected, setTeamSelected] = useState(false);
   const [statementData, setStatementData] = useState<any>(null);
   const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
+  const [cardholderMappings, setCardholderMappings] = useState<Map<string, any>>(new Map());
   const cameraRef = useRef<any>(null);
   const router = useRouter();
   const { user } = useAuth();
@@ -44,6 +45,41 @@ export default function ScanReceiptScreen() {
     { value: 'health', label: 'Salud' },
     { value: 'other', label: 'Otro' },
   ];
+
+  useEffect(() => {
+    const calculateMappings = async () => {
+      if (!selectedTeam || !statementData) {
+        setCardholderMappings(new Map());
+        return;
+      }
+
+      const { data: teamMembers } = await supabase
+        .from('team_members')
+        .select(`
+          user_id,
+          profiles!inner(
+            id,
+            display_name,
+            email
+          )
+        `)
+        .eq('team_id', selectedTeam);
+
+      if (!teamMembers || teamMembers.length === 0) {
+        setCardholderMappings(new Map());
+        return;
+      }
+
+      const mappings = new Map();
+      for (const cardholderData of statementData) {
+        const matched = matchCardholderToMember(cardholderData.cardholder, teamMembers);
+        mappings.set(cardholderData.cardholder, matched);
+      }
+      setCardholderMappings(mappings);
+    };
+
+    calculateMappings();
+  }, [selectedTeam, statementData]);
 
   const CURRENCIES = [
     { value: 'USD', label: 'USD ($)', symbol: '$' },
@@ -325,8 +361,10 @@ export default function ScanReceiptScreen() {
   };
 
   const matchCardholderToMember = (cardholderName: string, teamMembers: any[]) => {
-    const cleanCardholder = cardholderName.toUpperCase().trim();
-    const cardholderParts = cleanCardholder.split(/\s+/);
+    const cleanCardholder = cardholderName.toUpperCase().trim().replace(/[^A-Z0-9\s]/g, '');
+    const cardholderParts = cleanCardholder.split(/\s+/).filter(p => p.length >= 2);
+
+    console.log('Matching cardholder:', cardholderName, '-> cleaned:', cleanCardholder, 'parts:', cardholderParts);
 
     let bestMatch = null;
     let bestScore = 0;
@@ -340,15 +378,34 @@ export default function ScanReceiptScreen() {
 
       let score = 0;
 
+      console.log('  Checking against:', displayName, 'parts:', nameParts);
+
       for (const cardPart of cardholderParts) {
+        if (cardPart.length < 2) continue;
+
         if (displayName.includes(cardPart)) score += 2;
-        if (nameParts.some(np => np === cardPart)) score += 3;
+
+        for (const namePart of nameParts) {
+          if (namePart === cardPart) {
+            score += 5;
+          } else if (namePart.startsWith(cardPart.substring(0, 2))) {
+            score += 3;
+          } else if (cardPart.startsWith(namePart.substring(0, 2))) {
+            score += 2;
+          } else if (namePart.includes(cardPart) || cardPart.includes(namePart)) {
+            score += 1;
+          }
+        }
+
         if (emailName.includes(cardPart.toLowerCase())) score += 1;
       }
 
       for (const namePart of nameParts) {
+        if (namePart.length < 2) continue;
         if (cleanCardholder.includes(namePart)) score += 1;
       }
+
+      console.log('    Score:', score);
 
       if (score > bestScore) {
         bestScore = score;
@@ -356,7 +413,8 @@ export default function ScanReceiptScreen() {
       }
     }
 
-    return bestMatch;
+    console.log('  Best match:', bestMatch?.profiles?.display_name, 'with score:', bestScore);
+    return bestScore >= 3 ? bestMatch : null;
   };
 
   const handleCreateStatementExpenses = async () => {
@@ -366,10 +424,24 @@ export default function ScanReceiptScreen() {
     }
 
     try {
-      const { data: teamMembers } = await supabase
+      const { data: teamMembers, error: teamMembersError } = await supabase
         .from('team_members')
-        .select('user_id, profiles(display_name, email)')
+        .select(`
+          user_id,
+          profiles!inner(
+            id,
+            display_name,
+            email
+          )
+        `)
         .eq('team_id', selectedTeam);
+
+      console.log('Team members query result:', { teamMembers, error: teamMembersError });
+
+      if (teamMembersError) {
+        Alert.alert('Error', 'Error al obtener miembros del team: ' + teamMembersError.message);
+        return;
+      }
 
       if (!teamMembers || teamMembers.length === 0) {
         Alert.alert(
@@ -738,17 +810,7 @@ export default function ScanReceiptScreen() {
                     const someSelected = cardholderTxIds.some((txId: string) => selectedTransactions.has(txId));
 
                     const selectedTeamData = teams?.find(t => t.id === selectedTeam);
-                    const getMatchPreview = async () => {
-                      if (!selectedTeam) return null;
-                      const { data: teamMembers } = await supabase
-                        .from('team_members')
-                        .select('user_id, profiles(display_name, email)')
-                        .eq('team_id', selectedTeam);
-
-                      if (!teamMembers) return null;
-                      const matched = matchCardholderToMember(cardholderData.cardholder, teamMembers);
-                      return matched?.profiles?.display_name || matched?.profiles?.email || null;
-                    };
+                    const matchedMember = cardholderMappings.get(cardholderData.cardholder);
 
                     return (
                       <View key={cardIndex} style={styles.cardholderSection}>
@@ -757,9 +819,20 @@ export default function ScanReceiptScreen() {
                           <View style={styles.cardholderInfo}>
                             <Text style={styles.cardholderName}>{cardholderData.cardholder}</Text>
                             {selectedTeam && (
-                              <Text style={styles.cardholderMatch}>
-                                Team: {selectedTeamData?.name}
-                              </Text>
+                              <View>
+                                <Text style={styles.cardholderMatch}>
+                                  Team: {selectedTeamData?.name}
+                                </Text>
+                                {matchedMember ? (
+                                  <Text style={[styles.cardholderMatch, { color: '#10b981' }]}>
+                                    ✓ Se asignará a: {matchedMember.profiles?.display_name || matchedMember.profiles?.email}
+                                  </Text>
+                                ) : (
+                                  <Text style={[styles.cardholderMatch, { color: '#f59e0b' }]}>
+                                    ⚠ No se encontró match - se asignará a ti
+                                  </Text>
+                                )}
+                              </View>
                             )}
                           </View>
                           <Text style={styles.transactionCount}>
