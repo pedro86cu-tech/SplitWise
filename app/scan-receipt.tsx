@@ -1,17 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal, TextInput, ScrollView, KeyboardAvoidingView, Platform, Image, ActivityIndicator } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
-import { X, Camera as CameraIcon, Check, Users, Edit3, MapPin, Calendar, Tag, Upload, ImageIcon } from 'lucide-react-native';
+import { X, Camera as CameraIcon, Check, Users, Edit3, MapPin, Calendar, Tag, Upload, ImageIcon, FileText } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeams } from '@/hooks/useTeams';
 import { supabase } from '@/lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 
 export default function ScanReceiptScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [documentFile, setDocumentFile] = useState<{ uri: string; name: string; mimeType: string } | null>(null);
   const [processing, setProcessing] = useState(false);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [description, setDescription] = useState('');
@@ -164,33 +167,46 @@ export default function ScanReceiptScreen() {
         });
 
         setCapturedImage(photo.uri);
-        processReceipt(photo.base64);
+        processReceipt(photo.base64, 'image');
       } catch (error: any) {
         Alert.alert('Error', 'No se pudo tomar la foto');
       }
     }
   };
 
-  const pickImageFromGallery = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  const pickDocumentOrImage = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['image/*', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+        copyToCacheDirectory: true,
+      });
 
-    if (!permissionResult.granted) {
-      Alert.alert('Permiso requerido', 'Necesitamos acceso a tu galería para seleccionar el recibo');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      quality: 0.8,
-      base64: true,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      setCapturedImage(result.assets[0].uri);
-      if (result.assets[0].base64) {
-        processReceipt(result.assets[0].base64);
+      if (result.canceled) {
+        return;
       }
+
+      const asset = result.assets[0];
+      const mimeType = asset.mimeType || '';
+
+      if (mimeType.startsWith('image/')) {
+        setCapturedImage(asset.uri);
+        const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: 'base64',
+        });
+        processReceipt(base64, 'image');
+      } else {
+        setDocumentFile({
+          uri: asset.uri,
+          name: asset.name,
+          mimeType: mimeType,
+        });
+        const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: 'base64',
+        });
+        processReceipt(base64, mimeType);
+      }
+    } catch (error: any) {
+      Alert.alert('Error', 'No se pudo cargar el archivo: ' + error.message);
     }
   };
 
@@ -211,15 +227,16 @@ export default function ScanReceiptScreen() {
     if (!result.canceled && result.assets[0]) {
       setCapturedImage(result.assets[0].uri);
       if (result.assets[0].base64) {
-        processReceipt(result.assets[0].base64);
+        processReceipt(result.assets[0].base64, 'image');
       }
     }
   };
 
-  const processReceipt = async (base64Image: string | undefined) => {
-    if (!base64Image) {
-      Alert.alert('Error', 'No se pudo capturar la imagen');
+  const processReceipt = async (base64Data: string | undefined, fileType: string = 'image') => {
+    if (!base64Data) {
+      Alert.alert('Error', 'No se pudo capturar el archivo');
       setCapturedImage(null);
+      setDocumentFile(null);
       return;
     }
 
@@ -233,7 +250,10 @@ export default function ScanReceiptScreen() {
             'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ image: base64Image }),
+          body: JSON.stringify({
+            image: base64Data,
+            fileType: fileType
+          }),
         }
       );
 
@@ -244,7 +264,7 @@ export default function ScanReceiptScreen() {
       const data = await response.json();
 
       setAmount(data.amount ? data.amount.toString() : '');
-      setDescription(data.description || 'Gasto escaneado');
+      setDescription(data.description || 'Gasto procesado');
       setShowExpenseForm(true);
 
       if (!data.amount || data.amount === 0) {
@@ -258,10 +278,10 @@ export default function ScanReceiptScreen() {
       console.error('Error processing receipt:', error);
       Alert.alert(
         'Error',
-        `No se pudo procesar el recibo: ${error.message || 'Error desconocido'}. Por favor ingresa el monto manualmente.`
+        `No se pudo procesar el archivo: ${error.message || 'Error desconocido'}. Por favor ingresa el monto manualmente.`
       );
       setAmount('');
-      setDescription('Gasto escaneado');
+      setDescription('Gasto procesado');
       setShowExpenseForm(true);
     } finally {
       setProcessing(false);
@@ -356,18 +376,18 @@ export default function ScanReceiptScreen() {
           <View style={styles.manualOptions}>
             <TouchableOpacity
               style={styles.manualOptionCard}
-              onPress={pickImageFromGallery}
+              onPress={pickDocumentOrImage}
             >
               <LinearGradient
                 colors={['#3b82f6', '#2563eb']}
                 style={styles.manualOptionGradient}
               >
                 <View style={styles.manualOptionIcon}>
-                  <ImageIcon size={48} color="#ffffff" strokeWidth={1.5} />
+                  <FileText size={48} color="#ffffff" strokeWidth={1.5} />
                 </View>
-                <Text style={styles.manualOptionTitle}>Desde Galería</Text>
+                <Text style={styles.manualOptionTitle}>Cargar Archivo</Text>
                 <Text style={styles.manualOptionSubtitle}>
-                  Cargar recibo existente y procesar con IA
+                  Cargar imagen, PDF o documento y procesar con IA
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -618,6 +638,29 @@ export default function ScanReceiptScreen() {
                       <Text style={styles.receiptBadgeText}>
                         {manualEntry ? 'Procesado con IA' : 'Imagen guardada'}
                       </Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {documentFile && (
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Documento cargado</Text>
+                  <View style={styles.documentPreviewContainer}>
+                    <View style={styles.documentPreview}>
+                      <FileText size={48} color="#10b981" />
+                      <Text style={styles.documentName} numberOfLines={1}>
+                        {documentFile.name}
+                      </Text>
+                      <Text style={styles.documentType}>
+                        {documentFile.mimeType.includes('pdf') ? 'PDF' :
+                         documentFile.mimeType.includes('doc') ? 'DOC' :
+                         'Documento'}
+                      </Text>
+                    </View>
+                    <View style={styles.receiptBadge}>
+                      <FileText size={16} color="#10b981" />
+                      <Text style={styles.receiptBadgeText}>Procesado con IA</Text>
                     </View>
                   </View>
                 </View>
@@ -1149,5 +1192,32 @@ const styles = StyleSheet.create({
     height: 200,
     marginTop: 24,
     borderRadius: 12,
+  },
+  documentPreviewContainer: {
+    gap: 12,
+  },
+  documentPreview: {
+    width: '100%',
+    padding: 24,
+    borderRadius: 12,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  documentName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    textAlign: 'center',
+    maxWidth: '100%',
+  },
+  documentType: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    fontWeight: '600',
   },
 });

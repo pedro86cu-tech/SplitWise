@@ -1,6 +1,6 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Image, Linking } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Receipt, User, CircleCheck as CheckCircle, Circle as XCircle, FileText, Calendar, DollarSign, Tag, X } from 'lucide-react-native';
+import { ArrowLeft, Receipt, User, CircleCheck as CheckCircle, Circle as XCircle, FileText, Calendar, DollarSign, Tag, X, Download } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useExpensePaymentDetails } from '@/hooks/useExpensePaymentDetails';
 import { useState } from 'react';
@@ -43,6 +43,16 @@ export default function ExpenseDetailsScreen() {
       day: 'numeric',
       month: 'short',
     });
+  };
+
+  const isImageUrl = (url: string) => {
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+    const lowerUrl = url.toLowerCase();
+    return imageExtensions.some(ext => lowerUrl.includes(ext));
+  };
+
+  const handleOpenDocument = (url: string) => {
+    Linking.openURL(url);
   };
 
   if (loading) {
@@ -218,11 +228,25 @@ export default function ExpenseDetailsScreen() {
               </TouchableOpacity>
             </View>
             {viewingProofUrl && (
-              <Image
-                source={{ uri: viewingProofUrl }}
-                style={styles.proofImage}
-                resizeMode="contain"
-              />
+              isImageUrl(viewingProofUrl) ? (
+                <Image
+                  source={{ uri: viewingProofUrl }}
+                  style={styles.proofImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={styles.documentPreviewModal}>
+                  <FileText size={64} color="#10b981" />
+                  <Text style={styles.documentModalText}>Documento adjunto</Text>
+                  <TouchableOpacity
+                    style={styles.downloadButton}
+                    onPress={() => handleOpenDocument(viewingProofUrl)}
+                  >
+                    <Download size={20} color="#ffffff" />
+                    <Text style={styles.downloadButtonText}>Abrir documento</Text>
+                  </TouchableOpacity>
+                </View>
+              )
             )}
           </View>
         </View>
@@ -249,11 +273,25 @@ export default function ExpenseDetailsScreen() {
               </TouchableOpacity>
             </View>
             {viewingReceiptUrl && (
-              <Image
-                source={{ uri: viewingReceiptUrl }}
-                style={styles.proofImage}
-                resizeMode="contain"
-              />
+              isImageUrl(viewingReceiptUrl) ? (
+                <Image
+                  source={{ uri: viewingReceiptUrl }}
+                  style={styles.proofImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={styles.documentPreviewModal}>
+                  <FileText size={64} color="#10b981" />
+                  <Text style={styles.documentModalText}>Documento adjunto</Text>
+                  <TouchableOpacity
+                    style={styles.downloadButton}
+                    onPress={() => handleOpenDocument(viewingReceiptUrl)}
+                  >
+                    <Download size={20} color="#ffffff" />
+                    <Text style={styles.downloadButtonText}>Abrir documento</Text>
+                  </TouchableOpacity>
+                </View>
+              )
             )}
           </View>
         </View>
@@ -578,5 +616,31 @@ const styles = StyleSheet.create({
   proofImage: {
     width: '100%',
     height: 400,
+  },
+  documentPreviewModal: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+  },
+  documentModalText: {
+    fontSize: 16,
+    color: '#94a3b8',
+    textAlign: 'center',
+  },
+  downloadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#10b981',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 12,
+  },
+  downloadButtonText: {
+    fontSize: 16,
+    color: '#ffffff',
+    fontWeight: '600',
   },
 });

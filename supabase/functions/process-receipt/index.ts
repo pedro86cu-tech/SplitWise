@@ -15,13 +15,31 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { image } = await req.json();
+    const { image, fileType } = await req.json();
 
     if (!image) {
       return new Response(
-        JSON.stringify({ error: 'Image data is required' }),
+        JSON.stringify({ error: 'File data is required' }),
         {
           status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Check if it's a document (PDF, DOC, etc.) instead of an image
+    const isDocument = fileType && (fileType.includes('pdf') || fileType.includes('doc'));
+
+    if (isDocument) {
+      // For documents, we return a default response since OpenAI Vision API doesn't support them
+      console.log('Document file detected, returning default values');
+      return new Response(
+        JSON.stringify({
+          amount: 0,
+          description: 'Documento cargado - Ingresa los datos manualmente',
+        }),
+        {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
@@ -44,7 +62,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    console.log('Calling OpenAI API...');
+    console.log('Calling OpenAI API for image processing...');
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
