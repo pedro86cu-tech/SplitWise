@@ -633,14 +633,38 @@ export default function ScanReceiptScreen() {
               {statementData ? (
                 <View>
                   <Text style={styles.statementSubtitle}>
-                    Selecciona las transacciones a importar
+                    Selecciona las transacciones a importar por titular
                   </Text>
-                  {statementData.map((cardholderData: any, cardIndex: number) => (
-                    <View key={cardIndex} style={styles.cardholderSection}>
-                      <View style={styles.cardholderHeader}>
-                        <Users size={20} color="#3b82f6" />
-                        <Text style={styles.cardholderName}>{cardholderData.cardholder}</Text>
-                      </View>
+                  {statementData.map((cardholderData: any, cardIndex: number) => {
+                    const cardholderTxIds = cardholderData.transactions.map((_: any, txIndex: number) => `${cardIndex}-${txIndex}`);
+                    const allSelected = cardholderTxIds.every((txId: string) => selectedTransactions.has(txId));
+                    const someSelected = cardholderTxIds.some((txId: string) => selectedTransactions.has(txId));
+
+                    return (
+                      <View key={cardIndex} style={styles.cardholderSection}>
+                        <View style={styles.cardholderHeader}>
+                          <Users size={20} color="#3b82f6" />
+                          <Text style={styles.cardholderName}>{cardholderData.cardholder}</Text>
+                          <Text style={styles.transactionCount}>
+                            {cardholderData.transactions.length} transacciones
+                          </Text>
+                          <TouchableOpacity
+                            style={styles.selectAllButton}
+                            onPress={() => {
+                              const newSelected = new Set(selectedTransactions);
+                              if (allSelected) {
+                                cardholderTxIds.forEach((txId: string) => newSelected.delete(txId));
+                              } else {
+                                cardholderTxIds.forEach((txId: string) => newSelected.add(txId));
+                              }
+                              setSelectedTransactions(newSelected);
+                            }}
+                          >
+                            <Text style={styles.selectAllText}>
+                              {allSelected ? 'Deseleccionar' : someSelected ? 'Seleccionar resto' : 'Seleccionar todas'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
                       {cardholderData.transactions.map((transaction: any, txIndex: number) => {
                         const txId = `${cardIndex}-${txIndex}`;
                         const isSelected = selectedTransactions.has(txId);
@@ -658,7 +682,7 @@ export default function ScanReceiptScreen() {
                               setSelectedTransactions(newSelected);
                             }}
                           >
-                            <View style={styles.transactionCheckbox}>
+                            <View style={[styles.transactionCheckbox, isSelected && styles.transactionCheckboxSelected]}>
                               {isSelected && <Check size={16} color="#ffffff" />}
                             </View>
                             <View style={styles.transactionDetails}>
@@ -670,7 +694,39 @@ export default function ScanReceiptScreen() {
                         );
                       })}
                     </View>
-                  ))}
+                    );
+                  })}
+
+                  {selectedTeamData && (
+                    <View style={styles.formGroup}>
+                      <Text style={styles.formLabel}>Equipo</Text>
+                      <View style={styles.teamDisplay}>
+                        <Users size={20} color="#10b981" />
+                        <Text style={styles.teamDisplayText}>{selectedTeamData.name}</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  <TouchableOpacity
+                    style={[
+                      styles.submitButton,
+                      selectedTransactions.size === 0 && styles.submitButtonDisabled
+                    ]}
+                    onPress={handleCreateStatementExpenses}
+                    disabled={selectedTransactions.size === 0}
+                  >
+                    <LinearGradient
+                      colors={['#10b981', '#059669']}
+                      style={styles.submitButtonGradient}
+                    >
+                      <Check size={20} color="#ffffff" />
+                      <Text style={styles.submitButtonText}>
+                        {selectedTransactions.size === 0
+                          ? 'Selecciona transacciones'
+                          : `Crear ${selectedTransactions.size} Gasto${selectedTransactions.size !== 1 ? 's' : ''}`}
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
                 </View>
               ) : (
                 <View>
@@ -804,31 +860,22 @@ export default function ScanReceiptScreen() {
                   </View>
                 </View>
               )}
+
+                  <TouchableOpacity
+                    style={[styles.submitButton, !amount && styles.submitButtonDisabled]}
+                    onPress={handleCreateExpense}
+                    disabled={!amount}
+                  >
+                    <LinearGradient
+                      colors={['#10b981', '#059669']}
+                      style={styles.submitButtonGradient}
+                    >
+                      <Check size={20} color="#ffffff" />
+                      <Text style={styles.submitButtonText}>Crear Gasto</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
                 </View>
               )}
-
-              <TouchableOpacity
-                style={[
-                  styles.submitButton,
-                  statementData
-                    ? selectedTransactions.size === 0 && styles.submitButtonDisabled
-                    : !amount && styles.submitButtonDisabled
-                ]}
-                onPress={statementData ? handleCreateStatementExpenses : handleCreateExpense}
-                disabled={statementData ? selectedTransactions.size === 0 : !amount}
-              >
-                <LinearGradient
-                  colors={['#10b981', '#059669']}
-                  style={styles.submitButtonGradient}
-                >
-                  <Check size={20} color="#ffffff" />
-                  <Text style={styles.submitButtonText}>
-                    {statementData
-                      ? `Crear ${selectedTransactions.size} Gasto${selectedTransactions.size !== 1 ? 's' : ''}`
-                      : 'Crear Gasto'}
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
               <View style={{ height: 40 }} />
             </ScrollView>
           </View>
@@ -1416,6 +1463,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  transactionCheckboxSelected: {
+    backgroundColor: '#10b981',
+    borderColor: '#10b981',
+  },
+  transactionCount: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  selectAllButton: {
+    marginLeft: 'auto',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderRadius: 6,
+  },
+  selectAllText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#3b82f6',
   },
   transactionDetails: {
     flex: 1,
