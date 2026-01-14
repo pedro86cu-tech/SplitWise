@@ -269,11 +269,22 @@ export default function ScanReceiptScreen() {
       // Check if there's an error from the edge function
       if (data.error) {
         console.error('Edge function error:', data.error);
-        Alert.alert(
-          'Error al procesar',
-          `${data.error}\n\nRevisa los logs de la función en Supabase Dashboard.`,
-          [{ text: 'OK' }]
-        );
+
+        // Check if it's a PDF format error
+        if (data.error.includes('PDF') || data.error.includes('pdf')) {
+          Alert.alert(
+            'PDF No Soportado',
+            'Los archivos PDF no pueden procesarse directamente.\n\nPor favor:\n1. Toma capturas de pantalla del PDF\n2. O convierte el PDF a imagen (JPG/PNG)\n3. Luego vuelve a cargar el archivo',
+            [{ text: 'Entendido' }]
+          );
+        } else {
+          Alert.alert(
+            'Error al procesar',
+            data.error,
+            [{ text: 'OK' }]
+          );
+        }
+
         setAmount('');
         setDescription(data.description || 'Gasto procesado');
         setShowExpenseForm(true);

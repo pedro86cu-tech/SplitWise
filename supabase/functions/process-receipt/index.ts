@@ -36,8 +36,25 @@ Deno.serve(async (req: Request) => {
     const isPDF = fileType && fileType.includes('pdf');
     console.log('Is PDF:', isPDF);
 
+    // PDF files need special handling - OpenAI Vision API doesn't support PDFs directly
+    if (isPDF) {
+      console.log('PDF detected - OpenAI Vision API does not support PDFs');
+      return new Response(
+        JSON.stringify({
+          type: 'receipt',
+          amount: 0,
+          description: 'Estado de cuenta PDF',
+          error: 'Los archivos PDF no están soportados por la API de procesamiento de imágenes. Por favor, toma una captura de pantalla del PDF o conviértelo a imagen (JPG/PNG) y vuelve a intentarlo.',
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
     // DOC files are not supported
-    if (fileType && fileType.includes('doc') && !isPDF) {
+    if (fileType && fileType.includes('doc')) {
       console.log('DOC file detected, returning default values');
       return new Response(
         JSON.stringify({
@@ -71,11 +88,10 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log('=== Calling OpenAI API ===');
-    console.log('Document type:', isPDF ? 'PDF' : 'Image');
+    console.log('Document type: Image');
 
-    // Determine the prompt based on whether it's a PDF or image
-    const systemPrompt = isPDF
-      ? `You are a credit card statement and receipt analyzer.
+    // System prompt that handles both statements and single receipts
+    const systemPrompt = `You are a credit card statement and receipt analyzer.
          First, determine if this is a credit card statement with multiple cardholders or a single receipt.
 
          For CREDIT CARD STATEMENTS with multiple cardholders:
@@ -88,16 +104,12 @@ Deno.serve(async (req: Request) => {
          - Return: {"type": "receipt", "amount": number, "description": "string"}
          - Extract the total amount and brief description
 
-         Return ONLY valid JSON, no additional text.`
-      : 'You are a receipt analyzer. Extract the total amount and a brief description from receipts. Return ONLY valid JSON: {"type": "receipt", "amount": number, "description": "string"}. If you cannot find the total, return 0 for amount.';
+         Return ONLY valid JSON, no additional text.`;
 
-    const userPrompt = isPDF
-      ? 'Analyze this document. If it\'s a credit card statement with multiple cardholders, extract all cardholders and their transactions. If it\'s a single receipt, extract the amount and description. Return ONLY JSON.'
-      : 'Extract the total amount and description from this receipt. Return ONLY JSON format: {"type": "receipt", "amount": number, "description": string}. Do not include any other text.';
+    const userPrompt = 'Analyze this image. If it\'s a credit card statement with multiple cardholders, extract all cardholders and their transactions. If it\'s a single receipt, extract the amount and description. Return ONLY JSON.';
 
-    const imageUrl = isPDF
-      ? `data:application/pdf;base64,${image}`
-      : `data:image/jpeg;base64,${image}`;
+    // Support both JPG and PNG formats
+    const imageUrl = `data:image/jpeg;base64,${image}`;
 
     console.log('Image URL format:', imageUrl.substring(0, 50) + '...');
 
