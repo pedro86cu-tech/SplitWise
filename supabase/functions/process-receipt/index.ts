@@ -1,10 +1,38 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
+import { PDFExtract } from 'npm:pdf.js-extract@0.2.1';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
 };
+
+async function extractTextFromPdf(pdfBase64: string): Promise<string> {
+  console.log('Extracting text from PDF...');
+
+  try {
+    const pdfExtract = new PDFExtract();
+    const pdfBuffer = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
+
+    const data = await pdfExtract.extractBuffer(pdfBuffer);
+
+    let fullText = '';
+    data.pages.forEach((page: any) => {
+      page.content.forEach((item: any) => {
+        if (item.str) {
+          fullText += item.str + ' ';
+        }
+      });
+      fullText += '\n';
+    });
+
+    console.log(`Extracted ${fullText.length} characters from PDF`);
+    return fullText.trim();
+  } catch (error) {
+    console.error('Error extracting text from PDF:', error);
+    throw error;
+  }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -35,23 +63,6 @@ Deno.serve(async (req: Request) => {
     // Check if it's a PDF document
     const isPDF = fileType && fileType.includes('pdf');
     console.log('Is PDF:', isPDF);
-
-    // PDF files need special handling - OpenAI Vision API doesn't support PDFs directly
-    if (isPDF) {
-      console.log('PDF detected - OpenAI Vision API does not support PDFs');
-      return new Response(
-        JSON.stringify({
-          type: 'receipt',
-          amount: 0,
-          description: 'Estado de cuenta PDF',
-          error: 'Los archivos PDF no están soportados por la API de procesamiento de imágenes. Por favor, toma una captura de pantalla del PDF o conviértelo a imagen (JPG/PNG) y vuelve a intentarlo.',
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
-    }
 
     // DOC files are not supported
     if (fileType && fileType.includes('doc')) {
@@ -88,7 +99,7 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log('=== Calling OpenAI API ===');
-    console.log('Document type: Image');
+    console.log('Document type:', isPDF ? 'PDF (text extraction)' : 'Image');
 
     // System prompt that handles both statements and single receipts
     const systemPrompt = `You are a credit card statement and receipt analyzer.
@@ -106,12 +117,42 @@ Deno.serve(async (req: Request) => {
 
          Return ONLY valid JSON, no additional text.`;
 
-    const userPrompt = 'Analyze this image. If it\'s a credit card statement with multiple cardholders, extract all cardholders and their transactions. If it\'s a single receipt, extract the amount and description. Return ONLY JSON.';
+    let messageContent;
 
-    // Support both JPG and PNG formats
-    const imageUrl = `data:image/jpeg;base64,${image}`;
+    if (isPDF) {
+      // Extract text from PDF and send as text
+      console.log('Extracting text from PDF...');
+      const pdfText = await extractTextFromPdf(image);
+      console.log('PDF text extracted, length:', pdfText.length);
 
-    console.log('Image URL format:', imageUrl.substring(0, 50) + '...');
+      const userPrompt = `Analyze this credit card statement or receipt text. If it's a credit card statement with multiple cardholders, extract all cardholders and their transactions. If it's a single receipt, extract the amount and description. Return ONLY JSON.\n\nDocument text:\n${pdfText}`;
+
+      messageContent = [
+        {
+          type: 'text',
+          text: userPrompt,
+        },
+      ];
+    } else {
+      // Send image directly
+      const userPrompt = 'Analyze this image. If it\'s a credit card statement with multiple cardholders, extract all cardholders and their transactions. If it\'s a single receipt, extract the amount and description. Return ONLY JSON.';
+
+      const imageUrl = `data:image/jpeg;base64,${image}`;
+      console.log('Image URL format:', imageUrl.substring(0, 50) + '...');
+
+      messageContent = [
+        {
+          type: 'text',
+          text: userPrompt,
+        },
+        {
+          type: 'image_url',
+          image_url: {
+            url: imageUrl,
+          },
+        },
+      ];
+    }
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -128,18 +169,7 @@ Deno.serve(async (req: Request) => {
           },
           {
             role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: userPrompt,
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: imageUrl,
-                },
-              },
-            ],
+            content: messageContent,
           },
         ],
         max_tokens: 4000,
