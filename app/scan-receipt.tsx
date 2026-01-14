@@ -360,52 +360,67 @@ export default function ScanReceiptScreen() {
     }
   };
 
+  const normalizeText = (text: string): string => {
+    return text
+      .toUpperCase()
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/Ñ/g, 'N')
+      .replace(/[^A-Z0-9\s]/g, '');
+  };
+
   const matchCardholderToMember = (cardholderName: string, teamMembers: any[]) => {
-    const cleanCardholder = cardholderName.toUpperCase().trim().replace(/[^A-Z0-9\s]/g, '');
+    const cleanCardholder = normalizeText(cardholderName);
     const cardholderParts = cleanCardholder.split(/\s+/).filter(p => p.length >= 2);
 
-    console.log('Matching cardholder:', cardholderName, '-> cleaned:', cleanCardholder, 'parts:', cardholderParts);
+    console.log('🔍 Matching cardholder:', cardholderName);
+    console.log('   Normalized:', cleanCardholder);
+    console.log('   Parts:', cardholderParts);
 
     let bestMatch = null;
     let bestScore = 0;
 
     for (const member of teamMembers) {
-      const displayName = (member.profiles?.display_name || '').toUpperCase().trim();
-      const email = (member.profiles?.email || '').toUpperCase().trim();
-      const emailName = email.split('@')[0];
-
-      const nameParts = displayName.split(/\s+/);
+      const displayName = member.profiles?.display_name || '';
+      const email = member.profiles?.email || '';
+      const normalizedName = normalizeText(displayName);
+      const normalizedEmail = normalizeText(email);
+      const nameParts = normalizedName.split(/\s+/).filter(p => p.length >= 2);
 
       let score = 0;
 
-      console.log('  Checking against:', displayName, 'parts:', nameParts);
+      console.log('   👤 Checking:', displayName);
+      console.log('      Normalized:', normalizedName);
+      console.log('      Parts:', nameParts);
 
       for (const cardPart of cardholderParts) {
-        if (cardPart.length < 2) continue;
-
-        if (displayName.includes(cardPart)) score += 2;
-
         for (const namePart of nameParts) {
-          if (namePart === cardPart) {
-            score += 5;
-          } else if (namePart.startsWith(cardPart.substring(0, 2))) {
-            score += 3;
-          } else if (cardPart.startsWith(namePart.substring(0, 2))) {
-            score += 2;
-          } else if (namePart.includes(cardPart) || cardPart.includes(namePart)) {
-            score += 1;
+          if (cardPart === namePart) {
+            score += 10;
+            console.log('      ✓ Exact match:', cardPart, '=', namePart, '+10');
+          } else if (cardPart.length >= 3 && namePart.length >= 3) {
+            if (cardPart.startsWith(namePart.substring(0, 3)) || namePart.startsWith(cardPart.substring(0, 3))) {
+              score += 5;
+              console.log('      ≈ Prefix match:', cardPart, '~', namePart, '+5');
+            } else if (cardPart.includes(namePart) || namePart.includes(cardPart)) {
+              score += 3;
+              console.log('      ⊃ Contains:', cardPart, '⊃', namePart, '+3');
+            }
           }
         }
-
-        if (emailName.includes(cardPart.toLowerCase())) score += 1;
       }
 
-      for (const namePart of nameParts) {
-        if (namePart.length < 2) continue;
-        if (cleanCardholder.includes(namePart)) score += 1;
+      const matchedParts = cardholderParts.filter(cp =>
+        nameParts.some(np => cp === np || (cp.length >= 3 && np.length >= 3 && (cp.includes(np) || np.includes(cp))))
+      );
+
+      if (matchedParts.length >= 2) {
+        score += 5;
+        console.log('      ✓✓ Multiple parts matched:', matchedParts.length, '+5');
       }
 
-      console.log('    Score:', score);
+      console.log('      Final Score:', score);
 
       if (score > bestScore) {
         bestScore = score;
@@ -413,8 +428,11 @@ export default function ScanReceiptScreen() {
       }
     }
 
-    console.log('  Best match:', bestMatch?.profiles?.display_name, 'with score:', bestScore);
-    return bestScore >= 3 ? bestMatch : null;
+    console.log('   🎯 Best match:', bestMatch?.profiles?.display_name || 'NONE', 'Score:', bestScore);
+    const isGoodMatch = bestScore >= 10;
+    console.log('   Result:', isGoodMatch ? '✅ MATCHED' : '❌ NO MATCH');
+
+    return isGoodMatch ? bestMatch : null;
   };
 
   const handleCreateStatementExpenses = async () => {
