@@ -1,6 +1,6 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, Image, TextInput } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, CheckCircle, Receipt, User, Upload, FileText, Camera, ImageIcon } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, Receipt, User, Upload, FileText, Camera, ImageIcon, DollarSign, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTeamDebtDetails } from '@/hooks/useTeamDebtDetails';
 import { useState } from 'react';
@@ -13,7 +13,7 @@ export default function TeamDebtDetailsScreen() {
   const teamId = params.teamId as string;
   const teamName = params.teamName as string;
 
-  const { details, loading, markAsSettled, uploadPaymentProof } = useTeamDebtDetails(teamId);
+  const { details, loading, refresh, markAsSettled, uploadPaymentProof } = useTeamDebtDetails(teamId);
   const [showProofModal, setShowProofModal] = useState(false);
   const [selectedSplit, setSelectedSplit] = useState<{ id: string; amount: number; description: string } | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -23,6 +23,11 @@ export default function TeamDebtDetailsScreen() {
   const [viewingProofSplit, setViewingProofSplit] = useState<{ id: string; amount: number; userName: string } | null>(null);
   const [markingPaid, setMarkingPaid] = useState(false);
   const [confirmingPayment, setConfirmingPayment] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [selectedPaymentGroup, setSelectedPaymentGroup] = useState<{ userId: string; userName: string; currency: string; total: number; debts: any[] } | null>(null);
+  const [processingPayment, setProcessingPayment] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const handleMarkAsSettled = (splitId: string, userName: string, amount: number) => {
     Alert.alert(
@@ -176,6 +181,82 @@ export default function TeamDebtDetailsScreen() {
     });
   };
 
+  const toggleGroup = (key: string) => {
+    const newExpanded = new Set(expandedGroups);
+    if (newExpanded.has(key)) {
+      newExpanded.delete(key);
+    } else {
+      newExpanded.add(key);
+    }
+    setExpandedGroups(newExpanded);
+  };
+
+  const handlePaymentOption = (userId: string, userName: string, currency: string, total: number, debts: any[]) => {
+    setSelectedPaymentGroup({ userId, userName, currency, total, debts });
+    setPaymentAmount(total.toFixed(2));
+    setShowPaymentModal(true);
+  };
+
+  const handleProcessPayment = async () => {
+    if (!selectedPaymentGroup || !paymentAmount) {
+      Alert.alert('Error', 'Por favor ingresa un monto válido');
+      return;
+    }
+
+    const amount = parseFloat(paymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert('Error', 'El monto debe ser mayor a 0');
+      return;
+    }
+
+    if (amount > selectedPaymentGroup.total) {
+      Alert.alert('Error', `El monto no puede ser mayor al total adeudado (${selectedPaymentGroup.currency} ${selectedPaymentGroup.total.toFixed(2)})`);
+      return;
+    }
+
+    setProcessingPayment(true);
+    try {
+      let remainingAmount = amount;
+      const debtsToProcess = selectedPaymentGroup.debts
+        .filter(d => !d.isSettled)
+        .sort((a, b) => new Date(a.expenseDate).getTime() - new Date(b.expenseDate).getTime());
+
+      for (const debt of debtsToProcess) {
+        if (remainingAmount <= 0) break;
+
+        const amountForThisDebt = Math.min(remainingAmount, debt.amount);
+
+        const { error } = await supabase
+          .from('expense_splits')
+          .update({
+            amount_paid: amountForThisDebt,
+            is_settled: amountForThisDebt >= debt.amount,
+            settled_at: amountForThisDebt >= debt.amount ? new Date().toISOString() : null,
+          })
+          .eq('id', debt.splitId);
+
+        if (error) throw error;
+
+        remainingAmount -= amountForThisDebt;
+      }
+
+      Alert.alert(
+        'Pago registrado',
+        `Se registró un pago de ${selectedPaymentGroup.currency} ${amount.toFixed(2)}`,
+        [{ text: 'OK', onPress: async () => {
+          setShowPaymentModal(false);
+          setSelectedPaymentGroup(null);
+          setPaymentAmount('');
+          await refresh();
+        }}]
+      );
+    } catch (error: any) {
+      Alert.alert('Error', 'No se pudo procesar el pago: ' + error.message);
+    } finally {
+      setProcessingPayment(false);
+    }
+  };
+
   const groupByUserAndCurrency = (debts: typeof details.owedToMe) => {
     const grouped = new Map<string, {
       userName: string;
@@ -280,9 +361,27 @@ export default function TeamDebtDetailsScreen() {
                   </View>
                 </View>
 
-                {group.currencies.map((currencyGroup) => (
+                {group.currencies.map((currencyGroup) => {
+                  const groupKey = `${group.userName}-${currencyGroup.currency}`;
+                  const isExpanded = expandedGroups.has(groupKey);
+
+                  return (
                   <View key={currencyGroup.currency} style={styles.currencySection}>
-                    <Text style={styles.currencyLabel}>{currencyGroup.currency}</Text>
+                    <View style={styles.currencySectionHeader}>
+                      <Text style={styles.currencyLabel}>{currencyGroup.currency}</Text>
+                      <TouchableOpacity
+                        style={styles.expandButton}
+                        onPress={() => toggleGroup(groupKey)}
+                      >
+                        {isExpanded ? (
+                          <ChevronUp size={20} color="#64748b" />
+                        ) : (
+                          <ChevronDown size={20} color="#64748b" />
+                        )}
+                      </TouchableOpacity>
+                    </View>
+
+                    {isExpanded && (
                     <View style={styles.debtsList}>
                       {currencyGroup.debts.map((debt) => (
                     <View key={debt.splitId} style={[styles.debtItem, debt.isSettled && styles.debtItemSettled]}>
@@ -340,8 +439,10 @@ export default function TeamDebtDetailsScreen() {
                     </View>
                       ))}
                     </View>
+                    )}
                   </View>
-                ))}
+                  );
+                })}
               </View>
             ))}
           </View>
@@ -352,11 +453,69 @@ export default function TeamDebtDetailsScreen() {
             <Text style={styles.sectionTitle}>Debes</Text>
             {iOweGrouped.map((group) => (
               <View key={group.userName} style={styles.userCard}>
-                {group.currencies.map((currencyGroup) => (
+                <View style={styles.userHeader}>
+                  <View style={styles.userInfo}>
+                    <View style={[styles.userIcon, { backgroundColor: 'rgba(239, 68, 68, 0.1)' }]}>
+                      <User size={20} color="#ef4444" />
+                    </View>
+                    <View>
+                      <Text style={styles.userName}>{group.userName}</Text>
+                      {group.currencies.map((currencyGroup) => (
+                        <View key={currencyGroup.currency}>
+                          <Text style={[styles.userTotal, { color: '#ef4444' }]}>
+                            {currencyGroup.currency}: {currencyGroup.unpaidTotal.toFixed(2)} pendiente
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+
+                {group.currencies.map((currencyGroup) => {
+                  const groupKey = `iowe-${group.userName}-${currencyGroup.currency}`;
+                  const isExpanded = expandedGroups.has(groupKey);
+
+                  return (
                   <View key={currencyGroup.currency} style={styles.currencySection}>
-                    <Text style={styles.currencyLabel}>
-                      {currencyGroup.currency}: {currencyGroup.unpaidTotal.toFixed(2)} pendiente
-                    </Text>
+                    <View style={styles.currencySectionHeader}>
+                      <Text style={styles.currencyLabel}>{currencyGroup.currency}</Text>
+                      <TouchableOpacity
+                        style={styles.expandButton}
+                        onPress={() => toggleGroup(groupKey)}
+                      >
+                        {isExpanded ? (
+                          <ChevronUp size={20} color="#64748b" />
+                        ) : (
+                          <ChevronDown size={20} color="#64748b" />
+                        )}
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.paymentActions}>
+                      <TouchableOpacity
+                        style={styles.payAllButton}
+                        onPress={() => handlePaymentOption('', group.userName, currencyGroup.currency, currencyGroup.unpaidTotal, currencyGroup.debts)}
+                      >
+                        <LinearGradient
+                          colors={['#10b981', '#059669']}
+                          style={styles.payAllButtonGradient}
+                        >
+                          <DollarSign size={18} color="#ffffff" />
+                          <Text style={styles.payAllButtonText}>
+                            Pagar ${currencyGroup.unpaidTotal.toFixed(2)}
+                          </Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.payPartialButton}
+                        onPress={() => handlePaymentOption('', group.userName, currencyGroup.currency, currencyGroup.unpaidTotal, currencyGroup.debts)}
+                      >
+                        <DollarSign size={18} color="#3b82f6" />
+                        <Text style={styles.payPartialButtonText}>Monto</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {isExpanded && (
                     <View style={styles.debtsList}>
                       {currencyGroup.debts.map((debt) => (
                     <View key={debt.splitId} style={[styles.debtItem, debt.isSettled && styles.debtItemSettled]}>
@@ -431,8 +590,10 @@ export default function TeamDebtDetailsScreen() {
                     </View>
                       ))}
                     </View>
+                    )}
                   </View>
-                ))}
+                  );
+                })}
               </View>
             ))}
           </View>
@@ -595,6 +756,116 @@ export default function TeamDebtDetailsScreen() {
                     <>
                       <CheckCircle size={20} color="#ffffff" strokeWidth={2.5} />
                       <Text style={styles.confirmButtonText}>Confirmar pago</Text>
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        visible={showPaymentModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowPaymentModal(false);
+          setSelectedPaymentGroup(null);
+          setPaymentAmount('');
+        }}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => {
+            setShowPaymentModal(false);
+            setSelectedPaymentGroup(null);
+            setPaymentAmount('');
+          }}
+        >
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalTitle}>Registrar Pago</Text>
+            {selectedPaymentGroup && (
+              <>
+                <Text style={styles.modalSubtitle}>
+                  Para: {selectedPaymentGroup.userName}
+                </Text>
+                <View style={styles.paymentSummary}>
+                  <View style={styles.paymentSummaryRow}>
+                    <Text style={styles.paymentSummaryLabel}>Total adeudado:</Text>
+                    <Text style={styles.paymentSummaryAmount}>
+                      {selectedPaymentGroup.currency} ${selectedPaymentGroup.total.toFixed(2)}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.modalDescription}>
+                  Ingresa el monto que pagaste. Si es menor al total, se distribuirá entre las deudas más antiguas primero.
+                </Text>
+
+                <View style={styles.amountInputContainer}>
+                  <Text style={styles.currencySymbol}>{selectedPaymentGroup.currency}</Text>
+                  <TextInput
+                    style={styles.amountInput}
+                    value={paymentAmount}
+                    onChangeText={setPaymentAmount}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                    placeholderTextColor="#64748b"
+                    selectTextOnFocus
+                  />
+                </View>
+
+                <View style={styles.quickAmounts}>
+                  <TouchableOpacity
+                    style={styles.quickAmountButton}
+                    onPress={() => setPaymentAmount((selectedPaymentGroup.total * 0.5).toFixed(2))}
+                  >
+                    <Text style={styles.quickAmountText}>50%</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.quickAmountButton}
+                    onPress={() => setPaymentAmount((selectedPaymentGroup.total * 0.75).toFixed(2))}
+                  >
+                    <Text style={styles.quickAmountText}>75%</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.quickAmountButton}
+                    onPress={() => setPaymentAmount(selectedPaymentGroup.total.toFixed(2))}
+                  >
+                    <Text style={styles.quickAmountText}>100%</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowPaymentModal(false);
+                  setSelectedPaymentGroup(null);
+                  setPaymentAmount('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.submitButton]}
+                onPress={handleProcessPayment}
+                disabled={processingPayment}
+              >
+                <LinearGradient
+                  colors={['#10b981', '#059669']}
+                  style={styles.submitButtonGradient}
+                >
+                  {processingPayment ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <>
+                      <DollarSign size={20} color="#ffffff" />
+                      <Text style={styles.submitButtonText}>Registrar Pago</Text>
                     </>
                   )}
                 </LinearGradient>
@@ -990,5 +1261,120 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
     marginLeft: 8,
+  },
+  currencySectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  expandButton: {
+    padding: 8,
+  },
+  paymentActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  payAllButton: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  payAllButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+  },
+  payAllButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  payPartialButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#3b82f6',
+  },
+  payPartialButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#3b82f6',
+  },
+  paymentSummary: {
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  paymentSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  paymentSummaryLabel: {
+    fontSize: 14,
+    color: '#94a3b8',
+    fontWeight: '600',
+  },
+  paymentSummaryAmount: {
+    fontSize: 18,
+    color: '#ef4444',
+    fontWeight: '700',
+  },
+  amountInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: '#10b981',
+    marginBottom: 16,
+  },
+  currencySymbol: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#10b981',
+    marginRight: 12,
+  },
+  amountInput: {
+    flex: 1,
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  quickAmounts: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  quickAmountButton: {
+    flex: 1,
+    backgroundColor: '#334155',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  quickAmountText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
   },
 });
