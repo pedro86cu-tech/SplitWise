@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Alert, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import { DollarSign, Fingerprint, Check } from 'lucide-react-native';
+import { Fingerprint, Check } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as LocalAuthentication from 'expo-local-authentication';
 
@@ -136,11 +136,11 @@ export default function AuthScreen() {
       >
         <View style={styles.content}>
           <View style={styles.logoContainer}>
-            <View style={styles.iconWrapper}>
-              <DollarSign size={48} color="#10b981" strokeWidth={2.5} />
-            </View>
-            <Text style={styles.logo}>SplitWise</Text>
-            <Text style={styles.tagline}>Divide gastos con amigos</Text>
+            <Image
+              source={require('../assets/images/logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
 
           <View style={styles.formContainer}>
@@ -269,26 +269,12 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 48,
+    marginBottom: 36,
   },
-  iconWrapper: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  logo: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  tagline: {
-    fontSize: 16,
-    color: '#94a3b8',
+  logoImage: {
+    width: '100%',
+    maxWidth: 320,
+    height: 120,
   },
   formContainer: {
     gap: 20,

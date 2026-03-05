@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -19,6 +19,12 @@ export type TeamDetails = {
   isCreator: boolean;
   memberCount: number;
   members: TeamMember[];
+};
+
+export type UserSearchResult = {
+  id: string;
+  fullName: string;
+  email: string;
 };
 
 export function useTeamDetails(teamId: string) {
@@ -57,24 +63,19 @@ export function useTeamDetails(teamId: string) {
           profiles!team_members_user_id_fkey(
             id,
             full_name,
-            email:id
+            email
           )
         `)
         .eq('team_id', teamId);
 
-      const membersWithEmails = await Promise.all(
-        (membersData || []).map(async (member: any) => {
-          const { data: userData } = await supabase.auth.admin.getUserById(member.user_id);
-          return {
-            id: member.id,
-            userId: member.user_id,
-            userName: member.profiles?.full_name || 'Usuario',
-            userEmail: userData?.user?.email || '',
-            joinedAt: member.joined_at,
-            isCurrentUser: member.user_id === user.id,
-          };
-        })
-      );
+      const membersWithEmails = (membersData || []).map((member: any) => ({
+        id: member.id,
+        userId: member.user_id,
+        userName: member.profiles?.full_name || 'Usuario',
+        userEmail: member.profiles?.email || '',
+        joinedAt: member.joined_at,
+        isCurrentUser: member.user_id === user.id,
+      }));
 
       setTeam({
         id: teamData.id,
@@ -225,5 +226,34 @@ export function useTeamDetails(teamId: string) {
     }
   };
 
-  return { team, loading, refresh: loadTeamDetails, removeMember, addMember };
+  const searchUsers = useCallback(async (query: string): Promise<UserSearchResult[]> => {
+    if (!user || !query.trim()) return [];
+
+    const cleanQuery = query.trim().replace(/[,%]/g, '');
+    if (!cleanQuery) return [];
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .or(`full_name.ilike.%${cleanQuery}%,email.ilike.%${cleanQuery}%`)
+      .limit(8);
+
+    if (error || !data) {
+      return [];
+    }
+
+    const existingMemberIds = new Set(team?.members.map((member) => member.userId) || []);
+
+    return data
+      .filter((candidate: any) => !!candidate.email)
+      .filter((candidate: any) => candidate.id !== user.id)
+      .filter((candidate: any) => !existingMemberIds.has(candidate.id))
+      .map((candidate: any) => ({
+        id: candidate.id,
+        fullName: candidate.full_name || 'Usuario',
+        email: candidate.email,
+      }));
+  }, [team?.members, user]);
+
+  return { team, loading, refresh: loadTeamDetails, removeMember, addMember, searchUsers };
 }

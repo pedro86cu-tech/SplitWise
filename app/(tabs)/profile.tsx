@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { User as UserIcon, LogOut, Mail, Fingerprint } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
@@ -71,6 +71,11 @@ export default function ProfileScreen() {
         style={styles.header}
       >
         <View style={styles.headerContent}>
+          <Image
+            source={require('../../assets/images/logo.png')}
+            style={styles.headerLogo}
+            resizeMode="contain"
+          />
           <View style={styles.avatarContainer}>
             <LinearGradient
               colors={['#10b981', '#059669']}
@@ -147,12 +152,18 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingTop: 60,
-    paddingBottom: 40,
+    paddingBottom: 28,
     alignItems: 'center',
   },
   headerContent: {
     alignItems: 'center',
     gap: 12,
+  },
+  headerLogo: {
+    width: 150,
+    height: 46,
+    marginBottom: 2,
+    opacity: 0.95,
   },
   avatarContainer: {
     marginBottom: 8,

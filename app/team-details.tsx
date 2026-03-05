@@ -3,7 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, User, UserPlus, UserMinus, Crown, History, Trash2 } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTeamDetails } from '@/hooks/useTeamDetails';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export default function TeamDetailsScreen() {
@@ -11,10 +11,44 @@ export default function TeamDetailsScreen() {
   const params = useLocalSearchParams();
   const teamId = params.teamId as string;
 
-  const { team, loading, removeMember, addMember } = useTeamDetails(teamId);
+  const { team, loading, removeMember, addMember, searchUsers } = useTeamDetails(teamId);
   const [showAddMember, setShowAddMember] = useState(false);
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [addingMember, setAddingMember] = useState(false);
+  const [searchingUsers, setSearchingUsers] = useState(false);
+  const [userSuggestions, setUserSuggestions] = useState<Array<{ id: string; fullName: string; email: string }>>([]);
+  const [selectedUser, setSelectedUser] = useState<{ id: string; fullName: string; email: string } | null>(null);
+
+  useEffect(() => {
+    if (!showAddMember) {
+      setUserSuggestions([]);
+      setSearchingUsers(false);
+      setSelectedUser(null);
+      return;
+    }
+
+    const trimmed = newMemberEmail.trim();
+    if (trimmed.length < 2) {
+      setUserSuggestions([]);
+      setSearchingUsers(false);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const debounceTimer = setTimeout(async () => {
+      setSearchingUsers(true);
+      const results = await searchUsers(trimmed);
+      if (isCancelled) return;
+      setUserSuggestions(results);
+      setSearchingUsers(false);
+    }, 250);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(debounceTimer);
+    };
+  }, [newMemberEmail, showAddMember, searchUsers]);
 
   const handleRemoveMember = (memberId: string, memberName: string) => {
     Alert.alert(
@@ -39,13 +73,20 @@ export default function TeamDetailsScreen() {
   };
 
   const handleAddMember = async () => {
-    if (!newMemberEmail.trim()) {
-      Alert.alert('Error', 'Por favor ingresa un email válido');
+    const valueToAdd = selectedUser?.email || newMemberEmail.trim();
+
+    if (!valueToAdd) {
+      Alert.alert('Error', 'Ingresa un email o selecciona un usuario de la lista');
+      return;
+    }
+
+    if (!selectedUser && !valueToAdd.includes('@')) {
+      Alert.alert('Error', 'Selecciona un usuario de la lista o escribe un email válido');
       return;
     }
 
     setAddingMember(true);
-    const result = await addMember(newMemberEmail);
+    const result = await addMember(valueToAdd);
     setAddingMember(false);
 
     if (result.success) {
@@ -56,6 +97,8 @@ export default function TeamDetailsScreen() {
       Alert.alert('Éxito', message);
       setShowAddMember(false);
       setNewMemberEmail('');
+      setSelectedUser(null);
+      setUserSuggestions([]);
     } else {
       Alert.alert('Error', result.error || 'No se pudo agregar el miembro');
     }
@@ -219,24 +262,58 @@ export default function TeamDetailsScreen() {
           <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
             <Text style={styles.modalTitle}>Agregar miembro</Text>
             <Text style={styles.modalSubtitle}>
-              Ingresa el email del usuario que quieres agregar
+              Busca por nombre o email y selecciona un usuario
             </Text>
             <TextInput
               style={styles.input}
-              placeholder="Email del usuario"
+              placeholder="Nombre o email del usuario"
               placeholderTextColor="#64748b"
               value={newMemberEmail}
-              onChangeText={setNewMemberEmail}
-              keyboardType="email-address"
+              onChangeText={(text) => {
+                setNewMemberEmail(text);
+                setSelectedUser(null);
+              }}
               autoCapitalize="none"
               autoCorrect={false}
             />
+            {newMemberEmail.trim().length >= 2 && (
+              <>
+                {searchingUsers && (
+                  <Text style={styles.searchStatusText}>Buscando usuarios...</Text>
+                )}
+                {!searchingUsers && userSuggestions.length > 0 && (
+                  <View style={styles.suggestionsContainer}>
+                  <ScrollView style={styles.suggestionsList} nestedScrollEnabled>
+                    {userSuggestions.map((candidate) => (
+                      <TouchableOpacity
+                        key={candidate.id}
+                        style={styles.suggestionItem}
+                        onPress={() => {
+                          setSelectedUser(candidate);
+                          setNewMemberEmail(candidate.email);
+                          setUserSuggestions([]);
+                        }}
+                      >
+                        <Text style={styles.suggestionName}>{candidate.fullName}</Text>
+                        <Text style={styles.suggestionEmail}>{candidate.email}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  </View>
+                )}
+                {!searchingUsers && userSuggestions.length === 0 && (
+                  <Text style={styles.searchStatusText}>No se encontraron usuarios</Text>
+                )}
+              </>
+            )}
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
                   setShowAddMember(false);
                   setNewMemberEmail('');
+                  setSelectedUser(null);
+                  setUserSuggestions([]);
                 }}
               >
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
@@ -471,7 +548,40 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     borderWidth: 1,
     borderColor: '#334155',
+    marginBottom: 12,
+  },
+  suggestionsContainer: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.35)',
+    borderRadius: 12,
     marginBottom: 20,
+    maxHeight: 180,
+  },
+  suggestionsList: {
+    maxHeight: 180,
+  },
+  suggestionItem: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(148, 163, 184, 0.2)',
+  },
+  suggestionName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  suggestionEmail: {
+    fontSize: 13,
+    color: '#94a3b8',
+    marginTop: 2,
+  },
+  searchStatusText: {
+    color: '#94a3b8',
+    fontSize: 13,
+    marginBottom: 12,
+    paddingHorizontal: 4,
   },
   modalButtons: {
     flexDirection: 'row',
